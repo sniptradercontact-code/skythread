@@ -25,12 +25,12 @@ const LOW = /low/.test(location.search);
 const DPR = window.devicePixelRatio || 1;
 // quality tiers: 0 = ultra (AO), 1 = high, 2 = medium, 3 = low
 const QUALITY = [
-  { name: 'ULTRA', pr: Math.min(DPR, 1.5), ao: true, bloom: true },
-  { name: 'HIGH', pr: Math.min(DPR, 1.25), ao: false, bloom: true },
-  { name: 'MEDIUM', pr: 1, ao: false, bloom: true },
-  { name: 'LOW', pr: 0.75, ao: false, bloom: false },
+  { name: 'ULTRA', pr: Math.min(DPR, 1.5), ao: true, bloom: true, sh: 2048 },
+  { name: 'HIGH', pr: Math.min(DPR, 1.25), ao: false, bloom: true, sh: 2048 },
+  { name: 'MEDIUM', pr: 1, ao: false, bloom: true, sh: 1536 },
+  { name: 'LOW', pr: 0.66, ao: false, bloom: false, sh: 1024 },
 ];
-let qIdx = LOW ? 3 : 1;
+let qIdx = LOW ? 3 : 2;
 const PR = LOW ? 0.5 : QUALITY[qIdx].pr;
 renderer.setPixelRatio(PR);
 renderer.setSize(innerWidth, innerHeight);
@@ -39,6 +39,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.9;
 
+canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setTimeout(() => location.reload(), 400); });
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 7000);
 
@@ -108,15 +109,19 @@ const rt = new THREE.WebGLRenderTarget(innerWidth * PR, innerHeight * PR, { type
 const composer = new EffectComposer(renderer, rt);
 composer.setPixelRatio(PR); composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
-// ground-truth ambient occlusion: contact shadows in corners, under ledges, between buildings
+// ground-truth ambient occlusion: only allocated while ULTRA is active (it is
+// expensive in GPU memory, and allocating it on weak hardware can kill the context)
 let gtao = null;
-{
-  gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-  gtao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.5, thickness: 2.5, scale: 1.25, samples: 12 });
-  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
-  gtao.blendIntensity = 0.9;
-  composer.addPass(gtao);
-  gtao.enabled = false;
+function ensureGtao(on) {
+  if (on && !gtao && !LOW) {
+    gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    gtao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.5, thickness: 2.5, scale: 1.25, samples: 12 });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    gtao.blendIntensity = 0.9;
+    composer.insertPass(gtao, 1);
+  } else if (!on && gtao) {
+    composer.removePass(gtao); gtao.dispose(); gtao = null;
+  }
 }
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.3, 1.6);
 composer.addPass(bloom);
@@ -125,7 +130,11 @@ function setQuality(i, announce = true) {
   qIdx = clamp(i, 0, QUALITY.length - 1); const q = QUALITY[qIdx];
   const pr = LOW ? 0.5 : q.pr;
   renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
-  if (gtao) gtao.enabled = q.ao && !LOW; bloom.enabled = q.bloom;
+  ensureGtao(q.ao); bloom.enabled = q.bloom;
+  if (sun.shadow.mapSize.x !== q.sh) {
+    sun.shadow.mapSize.set(q.sh, q.sh);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
   resize();
   if (announce) flash('GRAPHICS: ' + q.name);
 }
@@ -136,7 +145,8 @@ function autoQuality(dt) {
   perf.t += dt; perf.frames++;
   if (perf.t >= 2) {
     const fps = perf.frames / perf.t; perf.t = 0; perf.frames = 0;
-    if (fps < 48 && qIdx < QUALITY.length - 1) { setQuality(qIdx + 1); }
+    if (fps < 26 && qIdx < QUALITY.length - 1) { setQuality(QUALITY.length - 1); }
+    else if (fps < 48 && qIdx < QUALITY.length - 1) { setQuality(qIdx + 1); }
     else if (fps >= 48) { perf.slow++; if (perf.slow >= 3) perf.settled = true; }
   }
 }
