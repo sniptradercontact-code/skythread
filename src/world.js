@@ -9,6 +9,7 @@ export const N = 13;
 export const HALF = (N * BLOCK) / 2;
 export const BORDER = 30;
 
+const clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
 let seed = 20261102;
 export function rnd() { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 export const rr = (a, b) => a + (b - a) * rnd();
@@ -41,7 +42,8 @@ export const STYLES = [
 
 function makeFacade(o) {
   const S = 1024, C = 8, cs = S / C, K = 2; // 2x the old pixel density
-  const [cc, c] = mk(S, S), [rc, r] = mk(S, S), [ec, e] = mk(S, S);
+  const [cc, c] = mk(S, S), [rc, r] = mk(S / 2, S / 2), [ec, e] = mk(S / 2, S / 2);
+  r.scale(0.5, 0.5); e.scale(0.5, 0.5);
   c.fillStyle = o.wall; c.fillRect(0, 0, S, S);
   r.fillStyle = o.wallRough; r.fillRect(0, 0, S, S);
   e.fillStyle = '#000'; e.fillRect(0, 0, S, S);
@@ -328,7 +330,7 @@ export function buildWorld(scene, renderer) {
     gr.addColorStop(0, `rgba(${128 + dx | 0},${128 + dy | 0},255,0.35)`); gr.addColorStop(1, 'rgba(128,128,255,0)');
     wg.fillStyle = gr; wg.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
   }
-  const waterN = tex(wc, false); waterN.repeat.set(220, 220);
+  const waterN = tex(wc, false); waterN.repeat.set(220, 220); waterN.anisotropy = 4;
   const waterMat = new THREE.MeshStandardMaterial({ color: 0x18303f, roughness: 0.14, metalness: 0.9, normalMap: waterN, normalScale: new THREE.Vector2(0.35, 0.35) });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000), waterMat);
   water.rotation.x = -Math.PI / 2; water.position.y = -2.5; scene.add(water);
@@ -340,8 +342,8 @@ export function buildWorld(scene, renderer) {
   }
   const trunkG = mergeGeometries(tParts);
   const lobes = [];
-  for (const [ox, oy, oz, r] of [[0, 4.7, 0, 1.75], [1.15, 4.1, 0.35, 1.2], [-1.05, 4.25, -0.25, 1.15], [0.35, 5.6, 0.65, 1.05], [-0.45, 5.45, -0.8, 0.95], [0.1, 4.2, 1.15, 1.0]]) {
-    const g = new THREE.IcosahedronGeometry(r, 2);
+  for (const [ox, oy, oz, r] of [[0, 4.7, 0, 1.8], [1.15, 4.1, 0.35, 1.25], [-1.05, 4.25, -0.25, 1.2], [0.3, 5.6, 0.5, 1.1], [-0.2, 4.3, 1.1, 1.05]]) {
+    const g = new THREE.IcosahedronGeometry(r, 1);
     const pa = g.attributes.position;
     for (let v = 0; v < pa.count; v++) { const m = 1 + (rnd() - 0.5) * 0.3; pa.setXYZ(v, pa.getX(v) * m, pa.getY(v) * m, pa.getZ(v) * m); }
     g.translate(ox, oy, oz); lobes.push(g);
@@ -428,34 +430,57 @@ export function buildWorld(scene, renderer) {
 
   // pedestrians: instanced walkers looping the sidewalks
   const pedBodyG = (() => {
-    const torso = new THREE.CapsuleGeometry(0.17, 0.42, 4, 8); torso.translate(0, 1.12, 0);
-    const legL = new THREE.CapsuleGeometry(0.07, 0.6, 3, 6); legL.rotateX(0.35); legL.translate(-0.09, 0.42, 0.04);
-    const legR = legL.clone(); legR.rotateX(-0.62); legR.translate(0.18, 0.01, -0.1);
-    const armL = new THREE.CapsuleGeometry(0.05, 0.52, 3, 6); armL.rotateX(-0.5); armL.translate(-0.26, 1.16, -0.05);
-    const armR = armL.clone(); armR.rotateX(0.9); armR.translate(0.52, 0.02, 0.14);
-    return mergeGeometries([torso, legL, legR, armL, armR]);
+    const limb = (r, len, rot, x, y, z) => { const g = new THREE.CapsuleGeometry(r, len - 2 * r, 1, 5); g.translate(0, -len / 2, 0); g.rotateX(rot); g.translate(x, y, z); return g; };
+    const torso = new THREE.CapsuleGeometry(0.17, 0.42, 2, 6); torso.translate(0, 1.12, 0);
+    return mergeGeometries([torso,
+      limb(0.075, 0.78, 0.38, -0.09, 0.84, 0), limb(0.075, 0.78, -0.38, 0.09, 0.84, 0),   // legs mid-stride
+      limb(0.055, 0.62, -0.42, -0.26, 1.42, 0), limb(0.055, 0.62, 0.42, 0.26, 1.42, 0)]); // arms counter-swing
   })();
-  const pedHeadG = new THREE.SphereGeometry(0.13, 10, 8); pedHeadG.scale(1, 1.18, 1); pedHeadG.translate(0, 1.62, 0);
-  const NP = 340;
+  const pedHeadG = new THREE.SphereGeometry(0.13, 7, 5); pedHeadG.scale(1, 1.18, 1); pedHeadG.translate(0, 1.62, 0);
+  const NP = 1000, CR = 2; // crowd lives within CR blocks of the player
   const pedBody = new THREE.InstancedMesh(pedBodyG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), NP);
   const pedHead = new THREE.InstancedMesh(pedHeadG, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }), NP);
-  pedBody.castShadow = true;
   const clothes = [0x37474f, 0x6d4c41, 0x90a4ae, 0xad3a3a, 0x3c6e47, 0x2c3e70, 0xc9b458, 0x8e6fa8, 0x263238, 0xbfb49a];
   const skins = [0xf1c9a5, 0xd9a066, 0x9c6b43, 0x6e4a2f, 0xffdbb5];
   const peds = [];
-  for (let k = 0; k < NP; k++) {
-    const bi = (rnd() * N * N) | 0, ix = bi % N, iz = (bi / N) | 0;
+  function placePed(p, pi, pj, initial) {
+    let ix, iz;
+    do {
+      ix = pi + ((Math.random() * (2 * CR + 1)) | 0) - CR; iz = pj + ((Math.random() * (2 * CR + 1)) | 0) - CR;
+    } while (!initial && Math.max(Math.abs(ix - pi), Math.abs(iz - pj)) < 2); // recycle out of sight, never pop in close
+    ix = clampN(ix, 0, N - 1); iz = clampN(iz, 0, N - 1);
     const bx = -HALF + ix * BLOCK, bz = -HALF + iz * BLOCK;
-    const x0 = bx + ROAD / 2 + 1.7, x1 = bx + BLOCK - ROAD / 2 - 1.7, z0 = bz + ROAD / 2 + 1.7, z1 = bz + BLOCK - ROAD / 2 - 1.7;
-    const w = x1 - x0, d = z1 - z0, per = 2 * (w + d);
-    peds.push({ x0, z0, w, d, per, s: rnd() * per, dir: rnd() < 0.5 ? 1 : -1, v: rr(0.9, 2.1), ph: rnd() * 7, x: 0, z: 0 });
+    p.ix = ix; p.iz = iz;
+    p.x0 = bx + ROAD / 2 + 1.0 + Math.random() * 2.0; p.z0 = bz + ROAD / 2 + 1.0 + Math.random() * 2.0; // lanes across the sidewalk width
+    p.w = bx + BLOCK - ROAD / 2 - 1.0 - Math.random() * 2.0 - p.x0; p.d = bz + BLOCK - ROAD / 2 - 1.0 - Math.random() * 2.0 - p.z0;
+    p.per = 2 * (p.w + p.d);
+    const prev = peds[p.k - 1];
+    if (prev && prev.ix === ix && prev.iz === iz && Math.random() < 0.3) { // join the previous person: a small standing group
+      p.stand = true; p.v = 0; p.s = prev.s + (Math.random() - 0.5) * 2.2; p.x0 = prev.x0 + (Math.random() - 0.5) * 1.2; p.z0 = prev.z0 + (Math.random() - 0.5) * 1.2; p.w = prev.w; p.d = prev.d; p.per = prev.per;
+      if (!prev.stand) { prev.stand = true; prev.v = 0; }
+    } else { p.stand = Math.random() < 0.06; p.v = p.stand ? 0 : 0.8 + Math.random() * 1.5; p.s = Math.random() * p.per; }
+    p.dir = Math.random() < 0.5 ? 1 : -1;
+  }
+  for (let k = 0; k < NP; k++) {
+    const p = { k, ph: rnd() * 7, x: 0, z: 0 }; peds.push(p); placePed(p, C0, C0, true);
     col.set(pick(clothes)); pedBody.setColorAt(k, col);
     col.set(pick(skins)); pedHead.setColorAt(k, col);
   }
   scene.add(pedBody, pedHead);
-  function updatePeds(dt) {
+  let pedFr = 0, lastPi = C0, lastPj = C0, teleFr = 0;
+  function updatePeds(dt, px = 0, pz = 0) {
+    pedFr ^= 1;
+    const dt2 = dt * 2; // each ped updates every other frame, with doubled dt
+    const pi = clampN(Math.floor((px + HALF) / BLOCK), 0, N - 1), pj = clampN(Math.floor((pz + HALF) / BLOCK), 0, N - 1);
+    // a jump of more than one block means a teleport/respawn: refill right around the player
+    if (Math.max(Math.abs(pi - lastPi), Math.abs(pj - lastPj)) > 1) teleFr = 2;
+    lastPi = pi; lastPj = pj;
+    const fill = teleFr > 0; if (fill) teleFr--;
     for (let k = 0; k < NP; k++) {
-      const p = peds[k]; p.s += p.dir * p.v * dt; p.ph += p.v * dt * 4.6;
+      if ((k & 1) !== pedFr) continue;
+      const p = peds[k];
+      if (Math.max(Math.abs(p.ix - pi), Math.abs(p.iz - pj)) > CR) placePed(p, pi, pj, fill);
+      p.s += p.dir * p.v * dt2; p.ph += (p.stand ? 1.1 : p.v * 4.6) * dt2;
       let u = p.s % p.per; if (u < 0) u += p.per;
       let x, z, ang;
       if (u < p.w) { x = p.x0 + u; z = p.z0; ang = Math.PI / 2; }
@@ -464,19 +489,88 @@ export function buildWorld(scene, renderer) {
       else { x = p.x0; z = p.z0 + p.d - (u - 2 * p.w - p.d); ang = Math.PI; }
       if (p.dir < 0) ang += Math.PI;
       p.x = x; p.z = z;
-      dm.position.set(x, 0.25 + Math.abs(Math.sin(p.ph)) * 0.035, z);
-      dm.rotation.set(0.03 * Math.sin(p.ph * 2), ang + 0.06 * Math.sin(p.ph), 0.04 * Math.sin(p.ph));
+      const amp = p.stand ? 0.008 : 0.035;
+      dm.position.set(x, 0.25 + Math.abs(Math.sin(p.ph)) * amp, z);
+      dm.rotation.set(0.03 * Math.sin(p.ph * 2) * (p.stand ? 0.4 : 1), ang + (p.stand ? 0.12 : 0.06) * Math.sin(p.ph * (p.stand ? 0.5 : 1)), 0.04 * Math.sin(p.ph));
       dm.scale.set(1, 1, 1); dm.updateMatrix();
       pedBody.setMatrixAt(k, dm.matrix); pedHead.setMatrixAt(k, dm.matrix);
     }
     pedBody.instanceMatrix.needsUpdate = true; pedHead.instanceMatrix.needsUpdate = true;
   }
-  updateCars(0); updatePeds(0);
-  function update(dt, time) {
-    updateCars(dt); updatePeds(dt);
+  // animated billboards on tall towers — invented brands, drawn procedurally
+  const BRANDS = [
+    ['KUMO', 'SPARKLING SODA', '#ff3b6b', '#2a0a14'],
+    ['NOVA TEK', 'THINK FASTER', '#2ef2ff', '#02141a'],
+    ['SKYLINE AIR', 'FLY THE GRID', '#ffd21f', '#1a1402'],
+    ['GLOW NOODLE', 'OPEN ALL NIGHT', '#7dff6b', '#06180a'],
+    ['THREAD', 'ENERGY DRINK', '#ff8a1a', '#190d02'],
+    ['PIXEL OPTICS', 'SEE SHARP', '#c08aff', '#120a1c'],
+  ];
+  const TICKER = 'SKY CITY NEWS  \u2022  WEB-RUNNER SPOTTED DOWNTOWN  \u2022  SUNNY SKIES ALL WEEK  \u2022  TRAFFIC SMOOTH ON 7TH AVE  \u2022  ';
+  function drawBB(g, bi, t) {
+    const W = 512, Hh = 256, B = BRANDS[bi % BRANDS.length];
+    g.fillStyle = B[3]; g.fillRect(0, 0, W, Hh);
+    const off = ((t * 50) % (W * 2)) - W;
+    const gr = g.createLinearGradient(off, 0, off + W * 0.6, Hh);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.09)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, Hh);
+    g.textAlign = 'center'; g.fillStyle = B[2]; g.font = '900 76px Arial';
+    const pulse = 1 + 0.05 * Math.sin(t * 2.2 + bi * 2);
+    g.save(); g.translate(W / 2, Hh * 0.46); g.scale(pulse, pulse); g.fillText(B[0], 0, 0); g.restore();
+    g.fillStyle = '#e8e8e8'; g.font = '600 30px Arial'; g.fillText(B[1], W / 2, Hh * 0.7);
+    g.fillStyle = B[2]; g.fillRect(0, Hh - 40, W, 2);
+    g.font = '700 26px Arial'; g.textAlign = 'left';
+    const tw = g.measureText(TICKER).width;
+    for (let x = -((t * 70) % tw); x < W; x += tw) g.fillText(TICKER, x, Hh - 10);
+  }
+  const bbSets = [];
+  for (let i = 0; i < 3; i++) { const [cv, g] = mk(512, 256); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; bbSets.push({ g, tex: t, brand: i, frame: -1 }); }
+  const bbMats = bbSets.map((b) => new THREE.MeshStandardMaterial({ map: b.tex, emissiveMap: b.tex, emissive: 0xffffff, emissiveIntensity: 1.2, color: 0x050505, roughness: 0.6 }));
+  const frameGeos = [];
+  {
+    const spots = boxes.filter((b) => !b.slab && b.maxY >= 96 && b.maxY <= 330 && b.maxX - b.minX >= 16 && b.maxZ - b.minZ >= 16);
+    const chosen = [];
+    for (const b of spots) {
+      const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+      if (chosen.some((c) => Math.hypot(c[0] - cx, c[1] - cz) < 115)) continue;
+      chosen.push([cx, cz, b]);
+      if (chosen.length >= 14) break;
+    }
+    chosen.forEach(([cx, cz, b], i) => {
+      const face = (i + ((rnd() * 4) | 0)) % 4; // 0:+x 1:-x 2:+z 3:-z
+      const w = b.maxX - b.minX, d = b.maxZ - b.minZ;
+      const fw = face < 2 ? d : w;
+      const bw = Math.min(22, fw * 0.75), bh = bw * 0.5;
+      const y = clampN(b.maxY * 0.62, 46, b.maxY - 12);
+      const geo = new THREE.PlaneGeometry(bw, bh);
+      const m = new THREE.Mesh(geo, bbMats[i % 3]);
+      if (face === 0) { m.position.set(b.maxX + 0.35, y, cz); m.rotation.y = Math.PI / 2; }
+      else if (face === 1) { m.position.set(b.minX - 0.35, y, cz); m.rotation.y = -Math.PI / 2; }
+      else if (face === 2) { m.position.set(cx, y, b.maxZ + 0.35); }
+      else { m.position.set(cx, y, b.minZ - 0.35); m.rotation.y = Math.PI; }
+      scene.add(m);
+      const fg = new THREE.BoxGeometry(face < 2 ? 0.5 : bw + 1.2, bh + 1.2, face < 2 ? bw + 1.2 : 0.5);
+      fg.translate(m.position.x + (face === 0 ? -0.33 : face === 1 ? 0.33 : 0), y, m.position.z + (face === 2 ? -0.33 : face === 3 ? 0.33 : 0));
+      frameGeos.push(fg);
+    });
+  }
+  if (frameGeos.length) scene.add(new THREE.Mesh(mergeGeometries(frameGeos), new THREE.MeshStandardMaterial({ color: 0x191c20, metalness: 0.6, roughness: 0.5 })));
+
+  updateCars(0); updatePeds(0); updatePeds(0);
+  function setDensity(f, treeShadows) {
+    pedBody.count = pedHead.count = Math.max(1, Math.round(NP * f));
+    crowns.castShadow = trunks.castShadow = treeShadows;
+  }
+  function update(dt, time, px, pz) {
+    updateCars(dt); updatePeds(dt, px, pz);
     swayU.value = time;
     waterN.offset.set(time * 0.006, time * 0.0045);
+    // redraw billboard screens ~7 times a second, staggered; switch ads every 7s
+    for (let i = 0; i < 3; i++) {
+      const b = bbSets[i], fr = Math.floor(time * 7 + i * 2.3);
+      if (fr !== b.frame) { b.frame = fr; drawBB(b.g, b.brand + Math.floor(time / 7) * 3, time); b.tex.needsUpdate = true; }
+    }
   }
 
-  return { facadeMats, update, updateCars, water, lampMat, headMat, tailMat, cars, NC, peds, NP };
+  return { facadeMats, update, setDensity, updateCars, water, lampMat, headMat, tailMat, bbMats, cars, NC, peds, NP };
 }

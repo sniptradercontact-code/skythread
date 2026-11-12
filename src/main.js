@@ -8,7 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { buildWorld, boxes, query, HALF, BORDER, makeWebTex, rnd } from './world.js';
+import { buildWorld, boxes, query, HALF, BORDER, makeWebTex, rnd, rr } from './world.js';
 
 const V3 = THREE.Vector3;
 const TAU = Math.PI * 2;
@@ -25,12 +25,13 @@ const LOW = /low/.test(location.search);
 const DPR = window.devicePixelRatio || 1;
 // quality tiers: 0 = ultra (AO), 1 = high, 2 = medium, 3 = low
 const QUALITY = [
-  { name: 'ULTRA', pr: Math.min(DPR, 1.5), ao: true, bloom: true, sh: 2048 },
+  { name: 'ULTRA', pr: Math.min(DPR, 2), ao: true, bloom: true, sh: 2048 },
   { name: 'HIGH', pr: Math.min(DPR, 1.25), ao: false, bloom: true, sh: 2048 },
   { name: 'MEDIUM', pr: 1, ao: false, bloom: true, sh: 1536 },
-  { name: 'LOW', pr: 0.66, ao: false, bloom: false, sh: 1024 },
+  { name: 'LOW', pr: 0.75, ao: false, bloom: false, sh: 1024, direct: true },
+  { name: 'BASIC', pr: 0.55, ao: false, bloom: false, sh: 0, direct: true },
 ];
-let qIdx = LOW ? 3 : 2;
+let qIdx = LOW ? 4 : 2;
 const PR = LOW ? 0.5 : QUALITY[qIdx].pr;
 renderer.setPixelRatio(PR);
 renderer.setSize(innerWidth, innerHeight);
@@ -95,6 +96,7 @@ function applyTOD(i) {
   world.lampMat.emissiveIntensity = t.name === 'Night' ? 6 : 0.3;
   world.headMat.emissiveIntensity = t.name === 'Night' ? 7 : 0.5;
   world.tailMat.emissiveIntensity = t.name === 'Night' ? 4 : 1.0;
+  if (world.bbMats) for (const m of world.bbMats) m.emissiveIntensity = t.name === 'Night' ? 3.0 : t.name === 'Golden Hour' ? 1.5 : 1.1;
   scene.environmentIntensity = t.env;
   if (envRT) envRT.dispose();
   const night = t.name === 'Night';
@@ -105,7 +107,7 @@ function applyTOD(i) {
 }
 
 // ---------------------------------------------------------------- post
-const rt = new THREE.WebGLRenderTarget(innerWidth * PR, innerHeight * PR, { type: THREE.HalfFloatType, samples: LOW ? 0 : 2 });
+const rt = new THREE.WebGLRenderTarget(innerWidth * PR, innerHeight * PR, { type: THREE.HalfFloatType });
 const composer = new EffectComposer(renderer, rt);
 composer.setPixelRatio(PR); composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
@@ -131,7 +133,9 @@ function setQuality(i, announce = true) {
   const pr = LOW ? 0.5 : q.pr;
   renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
   ensureGtao(q.ao); bloom.enabled = q.bloom;
-  if (sun.shadow.mapSize.x !== q.sh) {
+  world.setDensity(qIdx >= 4 ? 0.4 : qIdx === 3 ? 0.7 : 1, qIdx < 3);
+  sun.castShadow = q.sh > 0;
+  if (q.sh > 0 && sun.shadow.mapSize.x !== q.sh) {
     sun.shadow.mapSize.set(q.sh, q.sh);
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   }
@@ -628,6 +632,7 @@ function postCollide(inp, jumpEv) {
   }
 }
 
+function resetCam() { C.target.copy(P.pos); C.target.y += 0.85; C.occl = C.dist; C.hist.fill(C.dist + 0.6); C.floor = 0.5; }
 let spawnPos = new V3(), spawnYaw = 0;
 function chooseSpawn() {
   let best = null, bs = 1e9;
@@ -644,7 +649,7 @@ function chooseSpawn() {
 }
 function respawn(msg) {
   P.pos.copy(spawnPos); P.prev.copy(spawnPos); P.rpos.copy(spawnPos); P.vel.set(0, 0, 0); P.state = 'air'; P.trick = null; P.combo = 0; P.zip = null;
-  C.yaw = spawnYaw; C.pitch = -0.15; C.target.copy(P.pos);
+  C.yaw = spawnYaw; C.pitch = -0.15; resetCam();
   P.facing.set(Math.sin(spawnYaw), 0, Math.cos(spawnYaw));
   if (msg) flash('SPLASH! BACK TO THE ROOFTOPS');
 }
@@ -977,9 +982,17 @@ setQuality(qIdx, false);
 chooseSpawn(); respawn(false);
 resize();
 let last = performance.now(), acc = 0, time = 0, zipTick = 0;
+let hitches = 0, skipHitch = false, reported = false;
+function reportOnce(e) { if (!reported) { reported = true; console.error('[skythread] subsystem error (rendering continues):', e); } }
+document.addEventListener('visibilitychange', () => { skipHitch = true; });
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const rawDt = (now - last) / 1000;
+  let dt = Math.min(0.05, rawDt); last = now;
+  if (skipHitch) skipHitch = false; // returning from another tab is not a hitch
+  else if (started && rawDt > 1.0 && qIdx < QUALITY.length - 1) {
+    if (++hitches >= 2) { hitches = -999; perf.settled = true; setQuality(QUALITY.length - 1); }
+  }
   const paused = !started || (everLocked && !locked);
   if (!paused) {
     time += dt; acc += dt;
@@ -988,20 +1001,20 @@ function frame(now) {
     if (n >= 10) acc = 0;
     P.rpos.copy(P.prev).lerp(P.pos, clamp(acc / h, 0, 1));
     if (ev.trick) { startTrick(ev.trick); ev.trick = null; }
-    world.update(dt, time);
+    world.update(dt, time, P.pos.x, P.pos.z);
   } else { ev.trick = null; if (!started) { C.yaw += dt * 0.05; } }
   updateAnim(paused ? 0 : dt, time);
   updateCamera(dt, now);
   if ((zipTick = (zipTick + 1) % 3) === 0) computeZip();
   updateRope(paused ? 0 : dt);
-  updateHUD(dt);
-  updateAudio(paused ? 0 : dt);
+  try { updateHUD(dt); } catch (e) { reportOnce(e); }
+  try { updateAudio(paused ? 0 : dt); } catch (e) { reportOnce(e); }
   autoQuality(dt);
   sky.material.uniforms.time && (sky.material.uniforms.time.value = time);
-  composer.render();
+  if (QUALITY[qIdx].direct) renderer.render(scene, camera); else composer.render();
 }
 requestAnimationFrame(frame);
 
 // debug hooks for automated testing
 window.__boxes = boxes;
-window.__G = { P, C, keys, ev, applyTOD, info: () => renderer.info.render, zip: () => zipInfo, step, bloom, renderer, scene, setStarted: () => { started = true; $('start').classList.add('gone'); }, camera };
+window.__G = { P, C, keys, ev, applyTOD, world, resetCam, setQuality, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, bloom, renderer, scene, setStarted: () => { started = true; $('start').classList.add('gone'); }, camera };
