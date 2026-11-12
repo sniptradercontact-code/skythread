@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SKYTHREAD — Web-Swinging Sandbox</title>
+<style>
+  :root { --red:#e23636; --red-dk:#8f1216; --blue:#2456c9; --yel:#ffd21f; --ink:#0c0e16; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e14; font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif; color:#fff; user-select:none; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; cursor:crosshair; }
+  canvas#lines { position:fixed; inset:0; pointer-events:none; }
+  .vignette { position:fixed; inset:0; pointer-events:none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.45) 100%); }
+  .webcorner { position:fixed; top:0; left:0; width:170px; height:170px; pointer-events:none; opacity:.5; }
+  .comic { font-family:"Bangers", "Inter", cursive; letter-spacing:.04em; }
+  #hud-tl { position:fixed; top:18px; left:22px; pointer-events:none; transform:rotate(-2deg); }
+  #hud-tl .panel { background:var(--red); border:3px solid #fff; border-radius:8px; padding:6px 16px 8px; box-shadow:4px 4px 0 rgba(0,0,0,.55); }
+  #hud-tl .lbl { font-size:13px; letter-spacing:.22em; color:#fff; opacity:.95; font-family:"Bangers",cursive; }
+  #style { font-size:40px; font-family:"Bangers",cursive; color:#fff; line-height:.95; text-shadow:2px 2px 0 var(--red-dk); }
+  #combo { font-size:26px; font-family:"Bangers",cursive; color:var(--yel); margin-left:10px; text-shadow:2px 2px 0 rgba(0,0,0,.5); }
+  #hud-br { position:fixed; right:26px; bottom:22px; text-align:right; pointer-events:none; transform:rotate(1.5deg); }
+  #hud-br .panel { background:var(--blue); border:3px solid #fff; border-radius:8px; padding:8px 16px 10px; box-shadow:-4px 4px 0 rgba(0,0,0,.55); }
+  #hud-br .big { font-size:52px; font-family:"Bangers",cursive; line-height:.9; color:#fff; text-shadow:2px 2px 0 #0e2a6e; }
+  #hud-br .unit { font-size:13px; letter-spacing:.18em; opacity:.9; margin-left:5px; font-family:"Bangers",cursive; }
+  #hud-br .row { margin-top:4px; font-size:14px; letter-spacing:.16em; opacity:.95; font-family:"Bangers",cursive; }
+  #state { display:inline-block; margin-top:8px; font-size:15px; letter-spacing:.2em; padding:3px 12px; border:2px solid #fff; border-radius:6px; color:#fff; background:var(--red); font-family:"Bangers",cursive; box-shadow:-3px 3px 0 rgba(0,0,0,.5); }
+  #reticle { position:fixed; left:50%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; border:2.5px solid rgba(255,255,255,.55); pointer-events:none; transition:all .12s;
+    background: radial-gradient(circle, rgba(255,255,255,.9) 0 1.5px, transparent 2px); }
+  #reticle.launch { border-color:var(--yel); box-shadow:0 0 14px rgba(255,210,31,.9); width:26px; height:26px; margin:-13px 0 0 -13px; }
+  #reticle.wall { border-color:var(--red); width:14px; height:14px; margin:-7px 0 0 -7px; box-shadow:0 0 10px rgba(226,54,54,.8); }
+  #trick { position:fixed; left:0; right:0; top:58%; text-align:center; font-size:46px; font-family:"Bangers",cursive; letter-spacing:.05em; opacity:0; pointer-events:none; color:var(--yel);
+    text-shadow:3px 3px 0 var(--red), 6px 6px 0 rgba(0,0,0,.45); transform:rotate(-3deg); }
+  #trick.pop { animation:pop 1.3s ease-out forwards; }
+  #flash { position:fixed; left:0; right:0; top:20%; text-align:center; font-size:26px; font-family:"Bangers",cursive; letter-spacing:.2em; opacity:0; pointer-events:none; color:#fff; text-shadow:2px 2px 0 var(--blue), 4px 4px 8px rgba(0,0,0,.7); }
+  #flash.pop { animation:fade 2.2s ease-out forwards; }
+  @keyframes pop { 0%{opacity:0; transform:rotate(-3deg) scale(.5) translateY(14px);} 12%{opacity:1; transform:rotate(-3deg) scale(1.18);} 25%{transform:rotate(-3deg) scale(1);} 75%{opacity:1;} 100%{opacity:0; transform:rotate(-3deg) translateY(-26px);} }
+  @keyframes fade { 0%{opacity:0;} 10%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
+  #help { position:fixed; left:22px; bottom:20px; font-size:12px; line-height:1.8; background:rgba(12,14,22,.72); backdrop-filter:blur(6px); padding:12px 16px; border:2px solid var(--red); border-radius:8px; box-shadow:4px 4px 0 rgba(0,0,0,.4); pointer-events:none; }
+  #help b { color:var(--yel); font-weight:700; display:inline-block; min-width:92px; font-family:"Bangers",cursive; letter-spacing:.08em; font-size:14px; }
+  #help.hide { display:none; }
+  .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:
+    radial-gradient(ellipse at 50% 30%, rgba(36,86,201,.3), transparent 60%),
+    linear-gradient(180deg, rgba(5,8,14,.3), rgba(5,8,14,.88)); cursor:pointer; transition:opacity .5s; }
+  .overlay.gone { opacity:0; pointer-events:none; }
+  .title { font-size:clamp(64px, 12vw, 160px); font-family:"Bangers",cursive; line-height:.9; color:var(--red); letter-spacing:.02em;
+    text-shadow: 4px 4px 0 #fff, 8px 8px 0 var(--blue), 12px 12px 24px rgba(0,0,0,.6); transform:rotate(-2deg); }
+  .sub { margin-top:16px; font-size:20px; letter-spacing:.4em; color:#fff; font-family:"Bangers",cursive; text-shadow:2px 2px 0 var(--blue); }
+  .cta { margin-top:40px; padding:12px 42px; border:3px solid #fff; border-radius:10px; font-family:"Bangers",cursive; letter-spacing:.2em; font-size:22px; color:#fff; background:var(--red); box-shadow:5px 5px 0 rgba(0,0,0,.5); animation:pulse 1.6s ease-in-out infinite; transform:rotate(-1deg); }
+  @keyframes pulse { 50% { transform:rotate(-1deg) scale(1.06); box-shadow:5px 5px 0 rgba(0,0,0,.5), 0 0 30px rgba(226,54,54,.6); } }
+  .keys { margin-top:36px; display:grid; grid-template-columns:repeat(3, auto); gap:8px 34px; font-size:13px; opacity:.95; }
+  .keys span b { color:var(--yel); margin-right:8px; font-family:"Bangers",cursive; letter-spacing:.06em; }
+  #pause { display:none; }
+  #pause.show { display:flex; }
+  #pause .cta { margin-top:0; animation:none; }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="lines"></canvas>
+<div class="vignette"></div>
+<svg class="webcorner" viewBox="0 0 100 100"><g stroke="rgba(255,255,255,.8)" stroke-width="1" fill="none">
+<path d="M0 0 L100 0 M0 0 L95 35 M0 0 L75 68 M0 0 L40 92 M0 0 L0 100"/>
+<path d="M0 34 Q20 30 33 12 M33 12 Q36 6 35 0"/><path d="M0 62 Q35 55 60 22 Q64 12 63 0"/><path d="M0 88 Q48 78 84 31 Q90 16 88 0"/></g></svg>
+<div id="hud-tl"><div class="panel"><div class="lbl">STYLE</div><div><span id="style">0</span><span id="combo"></span></div></div></div>
+<div id="hud-br"><div class="panel"><div><span class="big" id="speed">0</span><span class="unit">KM/H</span></div><div class="row">ALT <span id="alt">0</span> M</div></div><div><span id="state">AIRBORNE</span></div></div>
+<div id="reticle"></div>
+<div id="trick"></div>
+<div id="flash"></div>
+<div id="help" class="hide">
+  <div><b>WASD</b>move / steer swing</div>
+  <div><b>MOUSE</b>look</div>
+  <div><b>SPACE</b>jump · hold in air to swing</div>
+  <div><b>LEFT CLICK</b>hold to swing</div>
+  <div><b>F / RIGHT CLICK</b>web-zip to aimed point</div>
+  <div><b>SHIFT</b>sprint · dive · wall-run</div>
+  <div><b>Q Z E R</b>flip · backflip · corkscrew · spin</div>
+  <div><b>X</b>restart from the rooftop</div>
+  <div><b>G</b>graphics quality (auto-adjusts)</div>
+  <div><b>T</b>time of day &nbsp; <b style="min-width:0">M</b>&nbsp;sound &nbsp; <b style="min-width:0">H</b>&nbsp;hide help</div>
+</div>
+<div class="overlay" id="start">
+  <div class="title">SKYTHREAD</div>
+  <div class="sub">A WEB-SWINGING SANDBOX</div>
+  <div class="cta">CLICK TO SWING</div>
+  <div class="keys">
+    <span><b>SPACE</b>jump, then hold to swing</span>
+    <span><b>F</b>web-zip / point launch</span>
+    <span><b>Q Z E R</b>air tricks</span>
+    <span><b>WASD</b>steer</span>
+    <span><b>SHIFT</b>dive &amp; sprint</span>
+    <span><b>RUN INTO WALLS</b>to climb</span>
+  </div>
+</div>
+<div class="overlay" id="pause"><div class="cta">PAUSED — CLICK TO RESUME</div></div>
+<script>/*__GAME__*/</script>
+</body>
+</html>

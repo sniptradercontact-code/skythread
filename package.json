@@ -1,0 +1,14 @@
+{
+  "name": "skythread",
+  "version": "1.0.0",
+  "description": "SKYTHREAD - a 3D web-swinging sandbox game. One self-contained HTML file.",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
