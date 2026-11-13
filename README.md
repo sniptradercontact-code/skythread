@@ -3,6 +3,12 @@
 A 3D web-swinging sandbox game that runs in the browser. The whole game ships as one
 self-contained `index.html` - open it locally or host it anywhere static.
 
+The city is a compressed, low-poly take on Manhattan: a long island with wide one-way
+avenues and narrow cross streets, a Downtown and a Midtown skyscraper cluster (towers up
+to ~540 m), low-rise brick districts between them, a big central park, two suspension
+bridges and outer boroughs across the rivers. Everything is generated in code - there are
+no model or audio files; sound is synthesised with the Web Audio API.
+
 ## Play
 
 Open `index.html` in a browser, click to start.
@@ -15,6 +21,7 @@ Open `index.html` in a browser, click to start.
 | Left click (hold) | swing |
 | F / right click | web-zip to the aimed point (roof edges launch you) |
 | Shift | sprint / dive / wall-run |
+| Walls | let go of swing and steer into a wall to stick and climb |
 | Q Z E R | front flip, backflip, corkscrew, 360 spin |
 | X | restart |
 | G | graphics quality (also auto-adjusts) |

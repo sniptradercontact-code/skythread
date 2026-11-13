@@ -8,7 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { buildWorld, boxes, query, HALF, BORDER, makeWebTex, rnd, rr } from './world.js';
+import { buildWorld, boxes, query, makeWebTex, rnd } from './world.js';
 
 const V3 = THREE.Vector3;
 const TAU = Math.PI * 2;
@@ -42,12 +42,12 @@ renderer.toneMappingExposure = 0.9;
 
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setTimeout(() => location.reload(), 400); });
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 7000);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.15, 9000);
 
 const world = buildWorld(scene, renderer);
 
 // ---------------------------------------------------------------- sky + lights
-const sky = new Sky(); sky.scale.setScalar(5000); scene.add(sky);
+const sky = new Sky(); sky.scale.setScalar(9000); scene.add(sky);
 const envScene = new THREE.Scene(); const envSky = new Sky(); envSky.scale.setScalar(50); envScene.add(envSky);
 const pmrem = new THREE.PMREMGenerator(renderer);
 let envRT = null;
@@ -60,9 +60,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 16, azim: 235, turb: 4, ray: 1.3, mie: 0.003, sunColor: 0xffd2a0, sunI: 2.2, sky: 0xbfd3ff, gnd: 0x7a6650, hemiI: 0.75, fog: 0x8a95a3, fogD: 0.0009, exp: 0.46, win: 0.2, env: 0.3, clouds: 0.35 },
-  { name: 'Midday', elev: 58, azim: 160, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.3, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.75, fog: 0x93a7bc, fogD: 0.0008, exp: 0.42, win: 0.05, env: 0.3, clouds: 0.45 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0xa9bcff, sunI: 0.9, lightElev: 45, lightAzim: 120, sky: 0x5a6fa8, gnd: 0x1a1a24, hemiI: 0.55, fog: 0x141c34, fogD: 0.001, exp: 0.95, win: 2.4, env: 0.9, clouds: 0.2 },
+  { name: 'Golden Hour', elev: 25, azim: 215, turb: 4, ray: 1.3, mie: 0.003, sunColor: 0xffd2a0, sunI: 2.2, sky: 0xbfd3ff, gnd: 0x7a6650, hemiI: 0.75, fog: 0x9aa6b4, fogD: 0.00034, exp: 0.46, win: 0.2, env: 0.3, clouds: 0.35 },
+  { name: 'Midday', elev: 58, azim: 160, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.3, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.75, fog: 0xa3b7cc, fogD: 0.0003, exp: 0.42, win: 0.05, env: 0.3, clouds: 0.45 },
+  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0xa9bcff, sunI: 0.9, lightElev: 45, lightAzim: 120, sky: 0x5a6fa8, gnd: 0x1a1a24, hemiI: 0.55, fog: 0x141c34, fogD: 0.00046, exp: 0.95, win: 2.4, env: 0.9, clouds: 0.2 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -94,8 +94,7 @@ function applyTOD(i) {
   renderer.toneMappingExposure = t.exp;
   for (const m of world.facadeMats) m.emissiveIntensity = t.win;
   world.lampMat.emissiveIntensity = t.name === 'Night' ? 6 : 0.3;
-  world.headMat.emissiveIntensity = t.name === 'Night' ? 7 : 0.5;
-  world.tailMat.emissiveIntensity = t.name === 'Night' ? 4 : 1.0;
+  world.glowMat.color.setScalar(t.name === 'Night' ? 2.8 : 1);
   if (world.bbMats) for (const m of world.bbMats) m.emissiveIntensity = t.name === 'Night' ? 3.0 : t.name === 'Golden Hour' ? 1.5 : 1.1;
   scene.environmentIntensity = t.env;
   if (envRT) envRT.dispose();
@@ -352,12 +351,12 @@ function findAnchor() {
   const hs = Math.hypot(v.x, v.z);
   if (hs > 4) { tv2.set(v.x / hs, 0, v.z / hs); fwd.multiplyScalar(0.7).addScaledVector(tv2, 0.3).normalize(); }
   const side = camRightH(tv2).multiplyScalar(P.hand === 'R' ? 1 : -1); // alternate hands -> zig-zag
-  const reach = 16 + clamp(hs, 0, 60) * 0.3;
+  const reach = 27 + clamp(hs, 0, 60) * 0.3;
   let best = null, bestS = 1e9;
-  const cands = [[reach, 30, 9], [reach * 0.8, 24, -9], [reach * 0.55, 18, 16]];
+  const cands = [[reach, 36, 11], [reach * 0.8, 28, -11], [reach * 0.55, 21, 19]];
   for (const [fw, upd, sd] of cands) {
     const ideal = tv3.copy(p).addScaledVector(fwd, fw).addScaledVector(side, sd); ideal.y += upd;
-    query(ideal.x - 45, ideal.x + 45, ideal.z - 45, ideal.z + 45, qbuf);
+    query(ideal.x - 55, ideal.x + 55, ideal.z - 55, ideal.z + 55, qbuf);
     for (const b of qbuf) {
       if (b.slab || b.maxY < p.y + 4) continue;
       const q = new V3(clamp(ideal.x, b.minX, b.maxX), clamp(ideal.y, b.minY, b.maxY), clamp(ideal.z, b.minZ, b.maxZ));
@@ -374,16 +373,16 @@ function findAnchor() {
       }
       if (q.y < p.y + 4) continue;
       const dist = q.distanceTo(p);
-      if (dist < 8 || dist > 75) continue;
+      if (dist < 8 || dist > 92) continue;
       const facing = n.x * fwd.x + n.z * fwd.z; // < 0: wall faces us (building dead ahead)
       const clear = q.y - dist; // lowest point of the arc
       const s = q.distanceTo(ideal) + (n.y > 0 ? 6 : 0) + (facing < -0.5 ? 26 : 0) + Math.max(0, 6 - clear) * 0.8 + Math.max(0, 14 - (q.y - p.y)) * 0.7;
       if (s < bestS) { bestS = s; best = { p: q, n }; }
     }
-    if (best && bestS < 30) break;
+    if (best && bestS < 34) break;
   }
   if (best) best.dir = fwd.clone();
-  return bestS < 42 ? best : null;
+  return bestS < 52 ? best : null;
 }
 
 let zipInfo = null;
@@ -391,8 +390,8 @@ function computeZip() {
   zipInfo = null;
   if (P.state === 'zip') return;
   const o = camera.position, d = camera.getWorldDirection(tv);
-  const h = raycastWorld(o, d, 260);
-  if (!h || h.p.distanceTo(P.pos) > 170 || h.p.distanceTo(P.pos) < 3) return;
+  const h = raycastWorld(o, d, 340);
+  if (!h || h.p.distanceTo(P.pos) > 230 || h.p.distanceTo(P.pos) < 3) return;
   const b = h.box;
   if (h.n.y > 0.5 || b.maxY - h.p.y < 7) {
     const T = h.p.clone(); T.y = b.maxY;
@@ -414,7 +413,7 @@ function tryAttach() {
   P.swingDir.copy(a.dir);
   const perp = tv.set(-a.dir.z, 0, a.dir.x);
   const lat = (a.p.x - P.pos.x) * perp.x + (a.p.z - P.pos.z) * perp.z;
-  P.pivot.copy(a.p).addScaledVector(perp, -lat * 0.85);
+  P.pivot.copy(a.p).addScaledVector(perp, -lat * 0.94);
   const d0 = P.pivot.distanceTo(P.pos);
   P.ropeLen = d0 + clamp(d0 * 0.12, 1.5, 5); P.ropeT = 0; // slack: free-fall into the arc instead of snapping onto the line
   if (P.trick) endTrick(true);
@@ -504,7 +503,7 @@ function step(dt) {
       const along = v.x * inp.x + v.z * inp.z;
       if (inp.lengthSq() > 0.01 && along < 32) { v.x += inp.x * 16 * dt; v.z += inp.z * 16 * dt; }
       if (v.y < (dive ? -95 : -68)) v.y = dive ? -95 : -68;
-      if (swingHeld && P.swingCd <= 0 && (P.swingArmed || P.timeInAir > 0.28)) tryAttach();
+      if (swingHeld && P.swingCd <= 0 && (P.swingArmed || (P.timeInAir > 0.28 && (v.y < -3 || P.timeInAir > 1.1)))) tryAttach();
       break;
     }
     case 'swing': {
@@ -517,12 +516,12 @@ function step(dt) {
       // move the pivot gently with the steering so turns feel responsive
       const dir = tv3.copy(P.swingDir);
       dir.addScaledVector(n, -dir.dot(n));
-      if (dir.lengthSq() > 0.01) { dir.normalize(); v.addScaledVector(dir, (hasIn ? 9 : 5) * dt); }
+      if (dir.lengthSq() > 0.01) { dir.normalize(); const along = v.dot(dir); v.addScaledVector(dir, ((hasIn ? 9 : 5) + clamp((34 - along) * 0.9, 0, 16)) * dt); }
       // pump at the bottom of the arc for speed (hold forward)
       if (hasIn && v.y < 4 && len > P.ropeLen * 0.96) { const hv = Math.hypot(v.x, v.z); if (hv > 2 && hv < 55) v.addScaledVector(tv3.set(v.x / hv, 0, v.z / hv), 5 * dt); }
       // bleed sideways drift (relative to the steering direction)
       const sx = -P.swingDir.z, sz = P.swingDir.x, lat = v.x * sx + v.z * sz;
-      const k = damp(1.1, dt); v.x -= sx * lat * k; v.z -= sz * lat * k;
+      const k = damp(2.2, dt); v.x -= sx * lat * k; v.z -= sz * lat * k;
       // reel in gently; reel fast if the arc would hit the street
       const floor = P.pivot.y - P.ropeLen;
       P.ropeLen = Math.max(9, P.ropeLen - (floor < 6 ? 6 + (6 - floor) * 3 : 0.8) * dt);
@@ -530,7 +529,7 @@ function step(dt) {
       else if (p.y > P.pivot.y - 1.5) release(true);
       else { // past ~55 degrees forward on the up-swing: let go automatically and carry momentum
         const fwdOff = (p.x - P.pivot.x) * P.swingDir.x + (p.z - P.pivot.z) * P.swingDir.z;
-        if (v.y > 0 && v.y < 6 && fwdOff > len * 0.55) release(true);
+        if (v.y > 0 && fwdOff > len * 0.6) release(true);
       }
       break;
     }
@@ -578,7 +577,7 @@ function step(dt) {
 function collide() {
   const p = P.pos, v = P.vel, pr = P.prev;
   P.grounded = false; P.wallHit = false; P.impact = 0;
-  const onIsland = Math.abs(p.x) < HALF + BORDER && Math.abs(p.z) < HALF + BORDER;
+  const onIsland = world.groundAt(p.x, p.z);
   if (onIsland && p.y < HY) { p.y = HY; if (v.y < 0) { P.impact = -v.y; v.y = 0; } P.grounded = true; }
   query(p.x - 2, p.x + 2, p.z - 2, p.z + 2, qbuf);
   for (const b of qbuf) {
@@ -627,7 +626,7 @@ function postCollide(inp, jumpEv) {
     const iv = inp;
     const into = -(iv.x * P.hitN.x + iv.z * P.hitN.z);
     if (P.state === 'zip') { if (!P.zip.launch && P.hitN.dot(P.zip.n) > 0.9) { enterWall(P.hitN); P.zip = null; } else if (P.zip.t > 0.15) { P.state = 'air'; P.zip = null; } }
-    else if ((P.state === 'air' || P.state === 'swing') && P.wallCd <= 0 && into > 0.55) enterWall(P.hitN);
+    else if ((P.state === 'air' || P.state === 'swing') && P.wallCd <= 0 && into > 0.55 && !(keys.Space || mouse0)) enterWall(P.hitN);
     else if (P.state === 'ground' && into > 0.55) enterWall(P.hitN);
   }
 }
@@ -637,15 +636,17 @@ let spawnPos = new V3(), spawnYaw = 0;
 function chooseSpawn() {
   let best = null, bs = 1e9;
   for (const b of boxes) {
-    if (b.slab || b.maxY < 90 || b.maxY > 170) continue;
-    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2, d = Math.hypot(cx, cz);
-    if (d < 70) continue;
-    const s = Math.abs(d - 140) + Math.abs(b.maxY - 125) * 0.5;
-    if (s < bs && b.maxX - b.minX > 10) { bs = s; best = b; }
+    if (b.slab || b.minY > 1 || b.maxY < 100 || b.maxY > 190 || b.maxX - b.minX < 16 || b.maxZ - b.minZ < 16) continue;
+    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+    const s = Math.hypot(cx - world.spawn.x, cz - world.spawn.z);
+    if (s >= bs) continue;
+    let clear = true; // nothing may be standing on this roof where we land
+    for (const c of boxes) if (c !== b && c.minY >= b.maxY - 0.5 && c.minY < b.maxY + 30 && c.minX < cx + 2 && c.maxX > cx - 2 && c.minZ < cz + 2 && c.maxZ > cz - 2) { clear = false; break; }
+    if (clear) { bs = s; best = b; }
   }
   const b = best || boxes.find((q) => !q.slab);
   spawnPos.set((b.minX + b.maxX) / 2, b.maxY + HY + 0.05, (b.minZ + b.maxZ) / 2);
-  spawnYaw = Math.atan2(-spawnPos.x, -spawnPos.z);
+  spawnYaw = 0; // face uptown, toward the tallest towers
 }
 function respawn(msg) {
   P.pos.copy(spawnPos); P.prev.copy(spawnPos); P.rpos.copy(spawnPos); P.vel.set(0, 0, 0); P.state = 'air'; P.trick = null; P.combo = 0; P.zip = null;
@@ -851,89 +852,166 @@ function updateCamera(dt, now) {
   sun.position.copy(sun.target.position).addScaledVector(lightDir, 450);
 }
 
-// ---------------------------------------------------------------- audio
-let actx = null, windGain = null, windFilt = null, master = null, muted = false, noiseBuf = null;
-let engGain = null, engFilt = null, engOsc = null, engOsc2 = null, trafGain = null, hornT = 4, stepN = 0;
+// ---------------------------------------------------------------- audio (all synthesised, no samples)
+let actx = null, master = null, muted = false, noiseBuf = null, AU = null;
+let hornT = 3, sirenT = 22, stepN = 0, crowdN = 0, crowdTick = 0;
 function initAudio() {
   if (actx) return;
   try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
-    master = actx.createGain(); master.gain.value = 0.8; master.connect(actx.destination);
-    noiseBuf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate);
-    const d = noiseBuf.getChannelData(0); let last = 0;
-    for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = w * 0.5 + last * 3; }
-    const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
-    windFilt = actx.createBiquadFilter(); windFilt.type = 'lowpass'; windFilt.frequency.value = 400;
-    windGain = actx.createGain(); windGain.gain.value = 0;
-    src.connect(windFilt).connect(windGain).connect(master); src.start();
-    // car engine: two detuned saws through a lowpass; volume follows the nearest car
-    engOsc = actx.createOscillator(); engOsc.type = 'sawtooth'; engOsc.frequency.value = 70;
-    engOsc2 = actx.createOscillator(); engOsc2.type = 'sawtooth'; engOsc2.frequency.value = 105; engOsc2.detune.value = 9;
-    engFilt = actx.createBiquadFilter(); engFilt.type = 'lowpass'; engFilt.frequency.value = 400; engFilt.Q.value = 1.2;
-    engGain = actx.createGain(); engGain.gain.value = 0;
-    engOsc.connect(engFilt); engOsc2.connect(engFilt); engFilt.connect(engGain).connect(master);
-    engOsc.start(); engOsc2.start();
-    // distant traffic bed: low rumble that fades with altitude
-    const t2 = actx.createBufferSource(); t2.buffer = noiseBuf; t2.loop = true; t2.playbackRate.value = 0.6;
-    const tf = actx.createBiquadFilter(); tf.type = 'lowpass'; tf.frequency.value = 160;
-    trafGain = actx.createGain(); trafGain.gain.value = 0;
-    t2.connect(tf).connect(trafGain).connect(master); t2.start(0, 1);
-  } catch (_) { actx = null; }
+    const sr = actx.sampleRate;
+    const comp = actx.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 4; comp.connect(actx.destination);
+    master = actx.createGain(); master.gain.value = 0.9; master.connect(comp);
+    noiseBuf = actx.createBuffer(1, sr * 2, sr);
+    const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    // street-canyon reverb: a synthetic impulse response with a few hard slap-back echoes
+    const len = (sr * 1.9) | 0, ir = actx.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch); let lp = 0;
+      for (let i = 0; i < len; i++) { const t = i / len; lp += ((Math.random() * 2 - 1) * Math.pow(1 - t, 2.8) - lp) * (0.85 - 0.7 * t); d[i] = lp * 0.9; }
+      for (const [ms, g] of [[41, 0.55], [79, 0.38], [127, 0.26], [203, 0.16]]) d[(((ms + ch * 7) / 1000) * sr) | 0] += g;
+    }
+    const conv = actx.createConvolver(); conv.buffer = ir;
+    const wet = actx.createGain(); wet.gain.value = 0.34; conv.connect(wet).connect(master);
+    const loop = (rate) => { const s = actx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.playbackRate.value = rate; s.start(0, Math.random() * 1.5); return s; };
+    const bed = (rate, type, f, q) => { const fl = actx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = actx.createGain(); g.gain.value = 0; loop(rate).connect(fl).connect(g).connect(master); return { f: fl.frequency, g: g.gain }; };
+    AU = {
+      rev: conv, pan: !!actx.createStereoPanner, cars: [],
+      windLo: bed(0.5, 'lowpass', 160, 0.5), windMid: bed(1, 'bandpass', 700, 0.6), windHi: bed(1.3, 'bandpass', 2600, 4),   // rumble, rush, whistle
+      city: bed(0.45, 'lowpass', 150, 0.4), hum: bed(0.8, 'bandpass', 420, 0.5),                                          // distant traffic bed
+      crowdA: bed(0.9, 'bandpass', 520, 1.1), crowdB: bed(1.15, 'bandpass', 1150, 1.6),                                    // crowd murmur
+      rope: bed(0.7, 'bandpass', 260, 9),                                                                                  // web line under tension
+    };
+    for (let i = 0; i < 4; i++) { // four car voices: engine + tyre noise, panned and doppler-shifted
+      const o1 = actx.createOscillator(); o1.type = 'sawtooth'; const o2 = actx.createOscillator(); o2.type = 'square';
+      const o2g = actx.createGain(); o2g.gain.value = 0.45;
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.Q.value = 0.9;
+      const tf = actx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 950; tf.Q.value = 0.6; const tg = actx.createGain(); tg.gain.value = 0.3;
+      const g = actx.createGain(); g.gain.value = 0;
+      o1.connect(lp); o2.connect(o2g).connect(lp); lp.connect(g); loop(1).connect(tf).connect(tg).connect(g);
+      let pan = null; if (AU.pan) { pan = actx.createStereoPanner(); g.connect(pan).connect(master); } else g.connect(master);
+      o1.start(); o2.start();
+      AU.cars.push({ f1: o1.frequency, f2: o2.frequency, lp: lp.frequency, tg: tg.gain, g: g.gain, pan: pan ? pan.pan : null, id: -1 });
+    }
+  } catch (e) { reportOnce(e); actx = null; AU = null; }
 }
-function toggleMute() { muted = !muted; if (master) master.gain.value = muted ? 0 : 0.8; flash(muted ? 'SOUND OFF' : 'SOUND ON'); }
-function burst(f0, f1, dur, vol, q = 2) {
-  if (!actx || muted) return;
-  const t = actx.currentTime, s = actx.createBufferSource(); s.buffer = noiseBuf;
-  const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
-  const g = actx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  s.connect(f).connect(g).connect(master); s.start(t, Math.random()); s.stop(t + dur + 0.05);
+function toggleMute() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, actx.currentTime, 0.03); flash(muted ? 'SOUND OFF' : 'SOUND ON'); }
+function route(node, pan, send) {
+  let n = node;
+  if (pan && AU.pan) { const p = actx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); n.connect(p); n = p; }
+  n.connect(master);
+  if (send > 0) { const s = actx.createGain(); s.gain.value = send; n.connect(s); s.connect(AU.rev); }
 }
-function thwip(m = 1) { burst(5200, 1400, 0.14 * m, 0.55, 3); }
-function whoosh(m = 1) { burst(600, 1800, 0.35 * m, 0.25 * m, 0.8); }
-function thud(m = 1) { burst(300, 60, 0.4, 0.8 * m, 1); }
-function horn(vol) {
-  if (!actx || muted || vol <= 0.01) return;
-  const t = actx.currentTime, dur = rr(0.25, 0.7);
-  for (const f of [rnd() < 0.5 ? 370 : 330, rnd() < 0.5 ? 466 : 415]) {
-    const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = f;
-    const fl = actx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 1100;
-    const g = actx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * 0.5, t + 0.03); g.gain.setValueAtTime(vol * 0.5, t + dur - 0.05); g.gain.linearRampToValueAtTime(0.001, t + dur);
-    o.connect(fl).connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
-  }
+function shape(g, t, attack, peak, dur) { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + attack); g.gain.setTargetAtTime(0, t + attack, dur / 3.5); }
+function nz(type, f0, f1, dur, vol, o = {}) { // filtered noise burst
+  if (!actx || !AU || muted || vol <= 0.002) return;
+  const t = actx.currentTime + (o.delay || 0), a = o.attack || 0.004, s = actx.createBufferSource(); s.buffer = noiseBuf;
+  const f = actx.createBiquadFilter(); f.type = type; f.Q.value = o.q || 1; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + a + dur);
+  const g = actx.createGain(); shape(g, t, a, vol, dur);
+  s.connect(f).connect(g); route(g, o.pan || 0, o.send == null ? 0.2 : o.send);
+  s.start(t, Math.random() * 1.5); s.stop(t + a + dur * 1.7 + 0.05);
 }
-function footstep(vol) { burst(rr(700, 1000), 220, 0.07, vol, 1.6); }
+function tone(type, f0, f1, dur, vol, o = {}) { // pitched sweep
+  if (!actx || !AU || muted || vol <= 0.002) return;
+  const t = actx.currentTime + (o.delay || 0), a = o.attack || 0.004, s = actx.createOscillator(); s.type = type;
+  s.frequency.setValueAtTime(f0, t); s.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + a + dur);
+  const g = actx.createGain(); shape(g, t, a, vol, dur);
+  s.connect(g); route(g, o.pan || 0, o.send == null ? 0.2 : o.send);
+  s.start(t); s.stop(t + a + dur * 1.7 + 0.05);
+}
+function thwip(m = 1) {
+  const p = 0.92 + Math.random() * 0.16;
+  nz('highpass', 3600 * p, 2600 * p, 0.03, 0.5, { q: 0.7, attack: 0.001, send: 0.12 });                 // the spit of the shooter
+  tone('sine', 3100 * p, 620 * p, 0.085 * m, 0.15, { attack: 0.002, send: 0.25 });                       // "zwip" sweep
+  nz('bandpass', 5200 * p, 1700 * p, 0.2 * m, 0.3, { q: 2.2, delay: 0.01, send: 0.3 });                  // line hissing out
+  nz('bandpass', 950, 480, 0.06, 0.2, { q: 3, attack: 0.002, delay: 0.11 * m, send: 0.6 });              // splat on the wall, a beat later
+}
+function whoosh(m = 1) { nz('bandpass', 350, 1500, 0.22 * m, 0.7 * m, { q: 0.7, attack: 0.07, send: 0.15 }); nz('bandpass', 1500, 380, 0.3 * m, 0.5 * m, { q: 0.7, delay: 0.2 * m, send: 0.15 }); }
+function thud(m = 1) {
+  tone('sine', 125, 40, 0.24, 0.85 * m, { attack: 0.003, send: 0.25 });                                   // body of the impact
+  nz('lowpass', 900, 200, 0.09, 0.5 * m, { q: 0.7, attack: 0.002, send: 0.3 });                          // slap of feet and hands
+  if (m > 0.8) nz('lowpass', 320, 60, 0.5, 0.35, { q: 0.7, attack: 0.01, delay: 0.03, send: 0.45 });     // rumble on a heavy landing
+}
+function footstep(vol, left) {
+  const p = 0.9 + Math.random() * 0.2, pan = left ? -0.15 : 0.15;
+  nz('lowpass', 420 * p, 140, 0.07, vol * 4, { q: 0.8, attack: 0.002, pan, send: 0.12 });
+  tone('sine', 150 * p, 70, 0.05, vol * 1.2, { attack: 0.002, pan, send: 0.1 });
+  nz('highpass', 2200 * p, 1800, 0.02, vol * 0.8, { q: 0.7, attack: 0.001, delay: 0.012, pan, send: 0.1 });
+}
+function horn(vol, pan, lpf) { // two-note car horn, muffled and echoing with distance
+  if (!actx || !AU || muted || vol < 0.004) return;
+  const t = actx.currentTime, pair = Math.random() < 0.6 ? [349, 440] : [392, 494], taps = Math.random() < 0.3 ? 2 : 1;
+  const g = actx.createGain(); g.gain.value = 0;
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lpf; f.Q.value = 0.7;
+  const os = pair.map((hz) => { const o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz * (0.985 + Math.random() * 0.03); o.connect(f); return o; });
+  f.connect(g); route(g, pan, 0.45);
+  let tt = t;
+  for (let k = 0; k < taps; k++) { const d = taps === 2 ? 0.16 + Math.random() * 0.12 : 0.35 + Math.random() * 0.7; g.gain.setValueAtTime(0.0001, tt); g.gain.linearRampToValueAtTime(vol, tt + 0.025); g.gain.setValueAtTime(vol, tt + d); g.gain.linearRampToValueAtTime(0.0001, tt + d + 0.06); tt += d + 0.16; }
+  for (const o of os) { o.start(t); o.stop(tt + 0.1); }
+}
+function siren(vol, pan) { // a far-off emergency wail drifting across the city
+  if (!actx || !AU || muted) return;
+  const t = actx.currentTime, dur = 9 + Math.random() * 5, o = actx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(640, t);
+  for (let tt = t; tt < t + dur; tt += 3.6) { o.frequency.linearRampToValueAtTime(1320, tt + 1.9); o.frequency.linearRampToValueAtTime(640, tt + 3.6); }
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1300;
+  const g = actx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 2.5); g.gain.setValueAtTime(vol, t + dur - 3); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  o.connect(f).connect(g); route(g, pan, 0.7); o.start(t); o.stop(t + dur + 0.1);
+}
+const _best = [-1, -1, -1, -1], _bd = [0, 0, 0, 0], _used = [false, false, false, false];
 function updateAudio(dt) {
-  if (!actx || !windGain) return;
-  const now = actx.currentTime, sp = P.vel.length();
-  const g = muted ? 0 : clamp((sp / 75) ** 2 * 0.5, 0, 0.45);
-  windGain.gain.setTargetAtTime(g, now, 0.1);
-  windFilt.frequency.setTargetAtTime(250 + sp * 28, now, 0.1);
-  // nearest car -> engine volume, pitch and brightness (simple proximity audio)
-  let d2 = 1e9, nv = 10;
-  const px = P.pos.x, py = P.pos.y, pz = P.pos.z, cars = world.cars;
-  for (let k = 0; k < world.NC; k++) { const c = cars[k]; const dx = c.x - px, dz = c.z - pz; const q = dx * dx + dz * dz; if (q < d2) { d2 = q; nv = c.v; } }
-  const d = Math.sqrt(d2 + py * py);
-  const prox = clamp(1 - d / 65, 0, 1);
-  if (engGain) {
-    engGain.gain.setTargetAtTime(muted ? 0 : prox * prox * 0.33, now, 0.15);
-    engOsc.frequency.setTargetAtTime(55 + nv * 2.5 + Math.sin(time * 9) * 3, now, 0.1);
-    engOsc2.frequency.setTargetAtTime(82 + nv * 3.8, now, 0.1);
-    engFilt.frequency.setTargetAtTime(220 + prox * 1400, now, 0.15);
+  if (!actx || !AU) return;
+  const now = actx.currentTime, v = P.vel, sp = v.length(), alt = Math.max(0, P.pos.y - HY), px = P.pos.x, pz = P.pos.z;
+  const set = (p, val, tc = 0.12) => p.setTargetAtTime(val, now, tc);
+  // find the four nearest cars first: they drive the car voices and how busy the city sounds
+  const cars = world.cars; _best.fill(-1); _bd.fill(1e12);
+  for (let k = 0; k < world.NC; k++) {
+    const c = cars[k], dx = c.x - px, dz = c.z - pz, d2 = dx * dx + dz * dz;
+    if (d2 < _bd[3]) { let i = 3; while (i > 0 && _bd[i - 1] > d2) { _bd[i] = _bd[i - 1]; _best[i] = _best[i - 1]; i--; } _bd[i] = d2; _best[i] = k; }
   }
-  if (trafGain) trafGain.gain.setTargetAtTime(muted ? 0 : 0.028 + 0.1 * clamp(1 - py / 110, 0, 1), now, 0.3);
-  // occasional horns from the streets, volume by distance to a random car
+  const traffic = clamp(1 - Math.sqrt(_bd[0]) / 280, 0.22, 1);
+  // wind: low rumble + mid rush + a whistle that only appears at real speed
+  const x = clamp(sp / 80, 0, 1), gust = 0.85 + 0.12 * Math.sin(time * 0.7) + 0.07 * Math.sin(time * 2.3 + 1);
+  set(AU.windLo.g, (Math.pow(x, 1.5) * 0.85 + clamp(alt / 500, 0, 1) * 0.1) * gust); set(AU.windLo.f, 120 + sp * 4);
+  set(AU.windMid.g, x * x * 0.5 * gust); set(AU.windMid.f, 420 + sp * 14);
+  set(AU.windHi.g, Math.pow(clamp((sp - 26) / 50, 0, 1), 2) * 0.1 * gust); set(AU.windHi.f, 1700 + sp * 24 + 200 * Math.sin(time * 1.3));
+  // the city itself: loud and full at street level, a faint wash from the rooftops
+  const street = clamp(1 - alt / 170, 0, 1);
+  set(AU.city.g, (0.14 + 0.5 * street) * traffic, 0.4); set(AU.city.f, 110 + 130 * street, 0.4); set(AU.hum.g, (0.03 + 0.09 * street) * traffic, 0.4);
+  // crowd murmur from the people actually near you
+  if (++crowdTick % 8 === 0) { let n = 0; const ps = world.peds; for (let k = 0; k < ps.length; k++) { const q = ps[k], dx = q.x - px, dz = q.z - pz; if (dx * dx + dz * dz < 900) n++; } crowdN = n; }
+  const cr = clamp(crowdN / 9, 0, 1) * clamp(1 - alt / 45, 0, 1), wob = 0.7 + 0.3 * Math.sin(time * 3.1) * Math.sin(time * 1.7 + 2);
+  set(AU.crowdA.g, 0.13 * cr * wob, 0.25); set(AU.crowdB.g, 0.05 * cr * (1.4 - wob), 0.25); set(AU.crowdA.f, 480 + 90 * Math.sin(time * 0.9), 0.3);
+  // the web line creaks as it loads up through the bottom of a swing
+  const tens = P.state === 'swing' ? clamp((sp * sp) / (Math.max(P.ropeLen, 8) * 55), 0, 1) : 0;
+  set(AU.rope.g, 0.12 * tens, 0.08); set(AU.rope.f, 190 + 170 * tens);
+  // traffic voices (distance falloff, air absorption, stereo position, doppler)
+  camRightH(tv); _used.fill(false);
+  for (const vc of AU.cars) { const i = vc.id >= 0 ? _best.indexOf(vc.id) : -1; if (i >= 0) _used[i] = true; else vc.id = -1; }
+  for (const vc of AU.cars) if (vc.id < 0) { const i = _used.indexOf(false); if (i >= 0 && _best[i] >= 0) { vc.id = _best[i]; _used[i] = true; } }
+  for (const vc of AU.cars) {
+    if (vc.id < 0) { set(vc.g, 0, 0.1); continue; }
+    const c = cars[vc.id], dx = c.x - px, dz = c.z - pz, dh = Math.hypot(dx, dz) || 1, d = Math.hypot(dh, alt);
+    const vr = ((c.vx - v.x) * dx + (c.vz - v.z) * dz) / dh;                       // closing speed: + means moving apart
+    const dop = clamp(1 - (vr / 343) * 1.6, 0.72, 1.35);
+    const f0 = (34 + c.v * 2.3 + (c.ph % 1) * 9) * dop;
+    set(vc.f1, f0, 0.06); set(vc.f2, f0 * 0.5, 0.06);
+    set(vc.lp, 170 + 2600 / (1 + d / 11), 0.1); set(vc.tg, 0.25 + 0.5 * clamp(c.v / 18, 0, 1));
+    set(vc.g, 0.5 / (1 + (d / 10) * (d / 10)), 0.1);
+    if (vc.pan) set(vc.pan, clamp(((dx * tv.x + dz * tv.z) / dh) * clamp(dh / 6, 0, 1), -1, 1), 0.08);
+  }
+  // horns from real cars nearby; a distant siren now and then
   hornT -= dt;
   if (hornT <= 0) {
-    hornT = rr(3, 9);
-    const c = cars[(Math.random() * world.NC) | 0];
-    const hd = Math.hypot(c.x - px, c.z - pz, py);
-    horn(clamp(1 - hd / 320, 0, 1) * 0.3);
+    hornT = 2.5 + Math.random() * 6;
+    let c = null, bdist = 1e9;
+    for (let q = 0; q < 14; q++) { const k = cars[(Math.random() * world.NC) | 0], d = Math.hypot(k.x - px, k.z - pz, alt); if (d < bdist) { bdist = d; c = k; } }
+    if (c && bdist < 420) { const dh = Math.hypot(c.x - px, c.z - pz) || 1; horn(0.15 / (1 + Math.pow(bdist / 60, 1.5)), ((c.x - px) * tv.x + (c.z - pz) * tv.z) / dh, 500 + 5200 / (1 + bdist / 45)); }
   }
-  // footsteps in sync with the run cycle
-  if (P.state === 'ground' && Math.hypot(P.vel.x, P.vel.z) > 3) {
-    const n = Math.floor(P.runPh / Math.PI);
-    if (n !== stepN) { stepN = n; footstep(clamp(sp / 26, 0.15, 0.6) * 0.45); }
-  }
+  sirenT -= dt; if (sirenT <= 0) { sirenT = 40 + Math.random() * 50; siren(0.05 + Math.random() * 0.04, Math.random() * 1.6 - 0.8); }
+  // footsteps, in time with the run cycle, alternating feet
+  const moving = (P.state === 'ground' && Math.hypot(v.x, v.z) > 3) || (P.state === 'wall' && sp > 3);
+  if (moving) { const n = Math.floor(P.runPh / Math.PI); if (n !== stepN) { stepN = n; footstep(P.state === 'wall' ? 0.14 : clamp(sp / 26, 0.2, 0.7) * 0.5, n & 1); } }
 }
 
 // ---------------------------------------------------------------- HUD
@@ -942,7 +1020,7 @@ const hud = { style: $('style'), combo: $('combo'), speed: $('speed'), alt: $('a
 const lines = $('lines'), lctx = lines.getContext('2d');
 function popTrick(t) { hud.trick.textContent = t; hud.trick.classList.remove('pop'); void hud.trick.offsetWidth; hud.trick.classList.add('pop'); }
 function flash(t) { if (!hud.flash) return; hud.flash.textContent = t; hud.flash.classList.remove('pop'); void hud.flash.offsetWidth; hud.flash.classList.add('pop'); }
-let hudT = 0, linesDirty = true;
+let hudT = 0, linesDirty = true, lastZone = '';
 const STATE_NAMES = { ground: 'ON FOOT', air: 'AIRBORNE', swing: 'SWINGING', zip: 'WEB-ZIP', wall: 'WALL CRAWL' };
 function updateHUD(dt) {
   hudT -= dt;
@@ -954,6 +1032,8 @@ function updateHUD(dt) {
     hud.style.textContent = P.style.toLocaleString();
     hud.combo.textContent = P.combo > 1 ? `x${P.combo}` : '';
     hud.state.textContent = STATE_NAMES[P.state] || '';
+    const zn = world.zoneAt(P.pos.x, P.pos.z);
+    if (zn && zn !== lastZone) { if (lastZone && started) flash(zn); lastZone = zn; }
   }
   hud.reticle.className = zipInfo ? (zipInfo.launch ? 'launch' : 'wall') : '';
   // speed lines
@@ -983,10 +1063,12 @@ chooseSpawn(); respawn(false);
 resize();
 let last = performance.now(), acc = 0, time = 0, zipTick = 0;
 let hitches = 0, skipHitch = false, reported = false;
+let dbgCam = null, dbgFreeze = false;
 function reportOnce(e) { if (!reported) { reported = true; console.error('[skythread] subsystem error (rendering continues):', e); } }
 document.addEventListener('visibilitychange', () => { skipHitch = true; });
 function frame(now) {
   requestAnimationFrame(frame);
+  if (dbgFreeze) { last = now; return; }
   const rawDt = (now - last) / 1000;
   let dt = Math.min(0.05, rawDt); last = now;
   if (skipHitch) skipHitch = false; // returning from another tab is not a hitch
@@ -1010,11 +1092,21 @@ function frame(now) {
   try { updateHUD(dt); } catch (e) { reportOnce(e); }
   try { updateAudio(paused ? 0 : dt); } catch (e) { reportOnce(e); }
   autoQuality(dt);
-  sky.material.uniforms.time && (sky.material.uniforms.time.value = time);
+  if (dbgCam) { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); }
+  sky.position.copy(camera.position);
   if (QUALITY[qIdx].direct) renderer.render(scene, camera); else composer.render();
 }
 requestAnimationFrame(frame);
 
 // debug hooks for automated testing
 window.__boxes = boxes;
-window.__G = { P, C, keys, ev, applyTOD, world, resetCam, setQuality, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, bloom, renderer, scene, setStarted: () => { started = true; $('start').classList.add('gone'); }, camera };
+let _an = null;
+function audioDbg() {
+  if (!actx || !AU) return { state: actx ? actx.state : 'none' };
+  if (!_an) { _an = actx.createAnalyser(); _an.fftSize = 2048; master.connect(_an); }
+  const d = new Float32Array(_an.fftSize); _an.getFloatTimeDomainData(d);
+  let s2 = 0, pk = 0; for (let i = 0; i < d.length; i++) { s2 += d[i] * d[i]; pk = Math.max(pk, Math.abs(d[i])); }
+  return { state: actx.state, rms: +Math.sqrt(s2 / d.length).toFixed(4), peak: +pk.toFixed(3), carVoices: AU.cars.map((v) => v.id), crowdN };
+}
+function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
+window.__G = { P, C, keys, ev, applyTOD, world, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, setQuality, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, bloom, renderer, scene, setStarted: () => { started = true; $('start').classList.add('gone'); }, camera };
