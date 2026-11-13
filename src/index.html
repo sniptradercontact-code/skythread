@@ -4,97 +4,122 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SKYTHREAD — Web-Swinging Sandbox</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;1,700;1,800&display=swap" rel="stylesheet">
 <style>
-  :root { --red:#e23636; --red-dk:#8f1216; --blue:#2456c9; --yel:#ffd21f; --ink:#0c0e16; }
+  :root { --cy:#2ef2ff; --am:#ffb14a; --ink:rgba(8,12,20,.62); --line:rgba(255,255,255,.16); --f:"Barlow Condensed","Arial Narrow",system-ui,sans-serif; }
   * { box-sizing:border-box; margin:0; padding:0; }
-  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e14; font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif; color:#fff; user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e14; font-family:var(--f); color:#fff; user-select:none; }
   canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; cursor:crosshair; }
   canvas#lines { position:fixed; inset:0; pointer-events:none; }
-  .vignette { position:fixed; inset:0; pointer-events:none; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.45) 100%); }
-  .webcorner { position:fixed; top:0; left:0; width:170px; height:170px; pointer-events:none; opacity:.5; }
-  .comic { font-family:"Bangers", "Inter", cursive; letter-spacing:.04em; }
-  #hud-tl { position:fixed; top:18px; left:22px; pointer-events:none; transform:rotate(-2deg); }
-  #hud-tl .panel { background:var(--red); border:3px solid #fff; border-radius:8px; padding:6px 16px 8px; box-shadow:4px 4px 0 rgba(0,0,0,.55); }
-  #hud-tl .lbl { font-size:13px; letter-spacing:.22em; color:#fff; opacity:.95; font-family:"Bangers",cursive; }
-  #style { font-size:40px; font-family:"Bangers",cursive; color:#fff; line-height:.95; text-shadow:2px 2px 0 var(--red-dk); }
-  #combo { font-size:26px; font-family:"Bangers",cursive; color:var(--yel); margin-left:10px; text-shadow:2px 2px 0 rgba(0,0,0,.5); }
-  #hud-br { position:fixed; right:26px; bottom:22px; text-align:right; pointer-events:none; transform:rotate(1.5deg); }
-  #hud-br .panel { background:var(--blue); border:3px solid #fff; border-radius:8px; padding:8px 16px 10px; box-shadow:-4px 4px 0 rgba(0,0,0,.55); }
-  #hud-br .big { font-size:52px; font-family:"Bangers",cursive; line-height:.9; color:#fff; text-shadow:2px 2px 0 #0e2a6e; }
-  #hud-br .unit { font-size:13px; letter-spacing:.18em; opacity:.9; margin-left:5px; font-family:"Bangers",cursive; }
-  #hud-br .row { margin-top:4px; font-size:14px; letter-spacing:.16em; opacity:.95; font-family:"Bangers",cursive; }
-  #state { display:inline-block; margin-top:8px; font-size:15px; letter-spacing:.2em; padding:3px 12px; border:2px solid #fff; border-radius:6px; color:#fff; background:var(--red); font-family:"Bangers",cursive; box-shadow:-3px 3px 0 rgba(0,0,0,.5); }
-  #reticle { position:fixed; left:50%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; border:2.5px solid rgba(255,255,255,.55); pointer-events:none; transition:all .12s;
-    background: radial-gradient(circle, rgba(255,255,255,.9) 0 1.5px, transparent 2px); }
-  #reticle.launch { border-color:var(--yel); box-shadow:0 0 14px rgba(255,210,31,.9); width:26px; height:26px; margin:-13px 0 0 -13px; }
-  #reticle.wall { border-color:var(--red); width:14px; height:14px; margin:-7px 0 0 -7px; box-shadow:0 0 10px rgba(226,54,54,.8); }
-  #trick { position:fixed; left:0; right:0; top:58%; text-align:center; font-size:46px; font-family:"Bangers",cursive; letter-spacing:.05em; opacity:0; pointer-events:none; color:var(--yel);
-    text-shadow:3px 3px 0 var(--red), 6px 6px 0 rgba(0,0,0,.45); transform:rotate(-3deg); }
+  .vignette { position:fixed; inset:0; pointer-events:none; background:radial-gradient(ellipse at center, transparent 52%, rgba(4,6,12,.5) 100%); }
+  .hud { position:fixed; pointer-events:none; opacity:0; transition:opacity .6s; }
+  body.playing .hud { opacity:1; }
+  .lbl { font-size:12px; font-weight:600; letter-spacing:.26em; color:rgba(255,255,255,.62); }
+
+  /* score, top left */
+  #hud-tl { top:20px; left:24px; padding:8px 18px 9px 14px; background:linear-gradient(90deg, var(--ink), rgba(8,12,20,0)); border-left:3px solid var(--cy); }
+  #style { font-size:44px; font-weight:800; font-style:italic; line-height:.95; letter-spacing:.01em; }
+  #combo { font-size:26px; font-weight:800; font-style:italic; color:var(--am); margin-left:10px; }
+
+  /* status, top right */
+  #hud-tr { top:20px; right:24px; display:flex; gap:8px; font-size:13px; font-weight:600; letter-spacing:.16em; }
+  #hud-tr span { padding:4px 10px; background:var(--ink); border:1px solid var(--line); }
+  #hud-tr b { color:var(--cy); font-weight:700; margin-left:5px; }
+
+  /* minimap, bottom left */
+  #hud-bl { left:24px; bottom:22px; width:196px; }
+  .mapwrap { position:relative; width:196px; height:196px; border-radius:50%; padding:8px; background:conic-gradient(from 210deg, var(--cy) 0 12%, rgba(255,255,255,.14) 12% 50%, var(--am) 50% 56%, rgba(255,255,255,.14) 56% 100%); box-shadow:0 6px 24px rgba(0,0,0,.45); }
+  .mapwrap::before { content:""; position:absolute; inset:3px; border-radius:50%; background:#0a0f18; }
+  #map { position:relative; width:180px; height:180px; border-radius:50%; display:block; }
+  #zone { margin-top:10px; font-size:19px; font-weight:700; letter-spacing:.14em; color:var(--am); text-shadow:0 2px 8px rgba(0,0,0,.7); white-space:nowrap; }
+  #street { font-size:14px; font-weight:600; letter-spacing:.14em; color:rgba(255,255,255,.85); text-shadow:0 2px 6px rgba(0,0,0,.8); white-space:nowrap; }
+
+  /* speed + altitude, bottom right */
+  #hud-br { right:24px; bottom:22px; display:flex; align-items:flex-end; gap:14px; }
+  .gaugewrap { position:relative; width:150px; height:150px; }
+  .gaugewrap svg { width:150px; height:150px; transform:rotate(135deg); filter:drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+  .gaugewrap circle { fill:none; stroke-width:7; stroke-linecap:butt; }
+  .gaugewrap .bg { fill:rgba(8,12,20,.5); stroke:rgba(255,255,255,.14); stroke-dasharray:245 327; }
+  #gauge { stroke:var(--cy); stroke-dasharray:245 327; stroke-dashoffset:245; transition:stroke-dashoffset .14s linear; }
+  .gaugewrap .num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #speed { font-size:52px; font-weight:800; font-style:italic; line-height:.9; }
+  .side { text-align:right; padding-bottom:10px; }
+  .side .alt { font-size:30px; font-weight:700; font-style:italic; line-height:1; }
+  .side .alt small { font-size:13px; font-weight:600; font-style:normal; letter-spacing:.2em; color:rgba(255,255,255,.62); margin-left:4px; }
+  #state { display:inline-block; margin-top:8px; padding:3px 12px; font-size:14px; font-weight:700; letter-spacing:.2em; color:#06121a; background:var(--cy); clip-path:polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+
+  #reticle { position:fixed; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; border:2px solid rgba(255,255,255,.5); pointer-events:none; transition:all .12s;
+    background:radial-gradient(circle, rgba(255,255,255,.95) 0 1.5px, transparent 2px); opacity:0; }
+  body.playing #reticle { opacity:1; }
+  #reticle.launch { border-color:var(--am); box-shadow:0 0 14px rgba(255,177,74,.9); width:26px; height:26px; margin:-13px 0 0 -13px; }
+  #reticle.wall { border-color:var(--cy); box-shadow:0 0 12px rgba(46,242,255,.85); width:22px; height:22px; margin:-11px 0 0 -11px; }
+  #trick { position:fixed; left:0; right:0; top:60%; text-align:center; font-size:46px; font-weight:800; font-style:italic; letter-spacing:.04em; opacity:0; pointer-events:none; color:#fff; text-shadow:0 0 18px rgba(46,242,255,.8), 0 3px 0 rgba(0,0,0,.5); }
   #trick.pop { animation:pop 1.3s ease-out forwards; }
-  #flash { position:fixed; left:0; right:0; top:20%; text-align:center; font-size:26px; font-family:"Bangers",cursive; letter-spacing:.2em; opacity:0; pointer-events:none; color:#fff; text-shadow:2px 2px 0 var(--blue), 4px 4px 8px rgba(0,0,0,.7); }
-  #flash.pop { animation:fade 2.2s ease-out forwards; }
-  @keyframes pop { 0%{opacity:0; transform:rotate(-3deg) scale(.5) translateY(14px);} 12%{opacity:1; transform:rotate(-3deg) scale(1.18);} 25%{transform:rotate(-3deg) scale(1);} 75%{opacity:1;} 100%{opacity:0; transform:rotate(-3deg) translateY(-26px);} }
-  @keyframes fade { 0%{opacity:0;} 10%{opacity:1;} 75%{opacity:1;} 100%{opacity:0;} }
-  #help { position:fixed; left:22px; bottom:20px; font-size:12px; line-height:1.8; background:rgba(12,14,22,.72); backdrop-filter:blur(6px); padding:12px 16px; border:2px solid var(--red); border-radius:8px; box-shadow:4px 4px 0 rgba(0,0,0,.4); pointer-events:none; }
-  #help b { color:var(--yel); font-weight:700; display:inline-block; min-width:92px; font-family:"Bangers",cursive; letter-spacing:.08em; font-size:14px; }
+  #flash { position:fixed; left:0; right:0; top:17%; text-align:center; font-size:28px; font-weight:700; letter-spacing:.42em; opacity:0; pointer-events:none; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.8); }
+  #flash::after { content:""; display:block; width:120px; height:2px; margin:8px auto 0; background:linear-gradient(90deg, transparent, var(--cy), transparent); }
+  #flash.pop { animation:fade 2.4s ease-out forwards; }
+  @keyframes pop { 0%{opacity:0; transform:scale(.6) translateY(14px);} 12%{opacity:1; transform:scale(1.14);} 25%{transform:scale(1);} 75%{opacity:1;} 100%{opacity:0; transform:translateY(-26px);} }
+  @keyframes fade { 0%{opacity:0; letter-spacing:.7em;} 12%{opacity:1; letter-spacing:.42em;} 75%{opacity:1;} 100%{opacity:0;} }
+  #help { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); display:grid; grid-template-columns:repeat(3, auto); gap:3px 26px; font-size:14px; font-weight:500; letter-spacing:.04em; background:var(--ink); padding:10px 18px; border:1px solid var(--line); border-top:2px solid var(--cy); pointer-events:none; white-space:nowrap; }
+  #help b { color:var(--cy); font-weight:700; letter-spacing:.1em; margin-right:8px; }
   #help.hide { display:none; }
-  .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:
-    radial-gradient(ellipse at 50% 30%, rgba(36,86,201,.3), transparent 60%),
-    linear-gradient(180deg, rgba(5,8,14,.3), rgba(5,8,14,.88)); cursor:pointer; transition:opacity .5s; }
+  .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:opacity .6s;
+    background:linear-gradient(180deg, rgba(5,8,14,.15) 0%, rgba(5,8,14,.55) 55%, rgba(5,8,14,.9) 100%); }
   .overlay.gone { opacity:0; pointer-events:none; }
-  .title { font-size:clamp(64px, 12vw, 160px); font-family:"Bangers",cursive; line-height:.9; color:var(--red); letter-spacing:.02em;
-    text-shadow: 4px 4px 0 #fff, 8px 8px 0 var(--blue), 12px 12px 24px rgba(0,0,0,.6); transform:rotate(-2deg); }
-  .sub { margin-top:16px; font-size:20px; letter-spacing:.4em; color:#fff; font-family:"Bangers",cursive; text-shadow:2px 2px 0 var(--blue); }
-  .cta { margin-top:40px; padding:12px 42px; border:3px solid #fff; border-radius:10px; font-family:"Bangers",cursive; letter-spacing:.2em; font-size:22px; color:#fff; background:var(--red); box-shadow:5px 5px 0 rgba(0,0,0,.5); animation:pulse 1.6s ease-in-out infinite; transform:rotate(-1deg); }
-  @keyframes pulse { 50% { transform:rotate(-1deg) scale(1.06); box-shadow:5px 5px 0 rgba(0,0,0,.5), 0 0 30px rgba(226,54,54,.6); } }
-  .keys { margin-top:36px; display:grid; grid-template-columns:repeat(3, auto); gap:8px 34px; font-size:13px; opacity:.95; }
-  .keys span b { color:var(--yel); margin-right:8px; font-family:"Bangers",cursive; letter-spacing:.06em; }
+  .title { font-size:clamp(72px, 13vw, 190px); font-weight:800; font-style:italic; line-height:.86; letter-spacing:-.01em; color:#fff; text-shadow:0 6px 40px rgba(0,0,0,.6); }
+  .title i { color:var(--cy); font-style:inherit; }
+  .thread { width:min(62vw, 760px); height:2px; margin-top:14px; background:linear-gradient(90deg, transparent, var(--cy) 20%, #fff 50%, var(--am) 80%, transparent); }
+  .sub { margin-top:14px; font-size:20px; font-weight:600; letter-spacing:.5em; color:rgba(255,255,255,.85); }
+  .cta { margin-top:38px; padding:12px 46px; font-size:22px; font-weight:700; letter-spacing:.3em; color:#06121a; background:var(--cy); clip-path:polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%); animation:pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform:scale(1.05); filter:brightness(1.2); } }
+  .keys { margin-top:34px; display:grid; grid-template-columns:repeat(3, auto); gap:6px 34px; font-size:15px; font-weight:500; letter-spacing:.04em; color:rgba(255,255,255,.9); }
+  .keys b { color:var(--am); font-weight:700; letter-spacing:.1em; margin-right:8px; }
   #pause { display:none; }
   #pause.show { display:flex; }
   #pause .cta { margin-top:0; animation:none; }
+  #hud-bl { transform-origin:left bottom; } #hud-br { transform-origin:right bottom; }
+  @media (max-width:1150px), (max-height:640px) { #hud-bl, #hud-br { transform:scale(.78); } #style { font-size:34px; } #trick { font-size:36px; } }
+  @media (max-width:900px) { #help, .keys { grid-template-columns:repeat(2, auto); } #hud-tr { display:none; } }
 </style>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
 </head>
 <body>
 <canvas id="c"></canvas>
 <canvas id="lines"></canvas>
 <div class="vignette"></div>
-<svg class="webcorner" viewBox="0 0 100 100"><g stroke="rgba(255,255,255,.8)" stroke-width="1" fill="none">
-<path d="M0 0 L100 0 M0 0 L95 35 M0 0 L75 68 M0 0 L40 92 M0 0 L0 100"/>
-<path d="M0 34 Q20 30 33 12 M33 12 Q36 6 35 0"/><path d="M0 62 Q35 55 60 22 Q64 12 63 0"/><path d="M0 88 Q48 78 84 31 Q90 16 88 0"/></g></svg>
-<div id="hud-tl"><div class="panel"><div class="lbl">STYLE</div><div><span id="style">0</span><span id="combo"></span></div></div></div>
-<div id="hud-br"><div class="panel"><div><span class="big" id="speed">0</span><span class="unit">KM/H</span></div><div class="row">ALT <span id="alt">0</span> M</div></div><div><span id="state">AIRBORNE</span></div></div>
+<div id="hud-tl" class="hud"><div class="lbl">STYLE</div><div><span id="style">0</span><span id="combo"></span></div></div>
+<div id="hud-tr" class="hud"><span id="tod">GOLDEN HOUR</span><span id="tier">MEDIUM</span><span>FPS<b id="fps">0</b></span></div>
+<div id="hud-bl" class="hud"><div class="mapwrap"><canvas id="map" width="360" height="360"></canvas></div><div id="zone">MIDTOWN</div><div id="street"></div></div>
+<div id="hud-br" class="hud">
+  <div class="side"><div class="lbl">ALTITUDE</div><div class="alt"><span id="alt">0</span><small>M</small></div><div><span id="state">AIRBORNE</span></div></div>
+  <div class="gaugewrap"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle id="gauge" cx="60" cy="60" r="52"/></svg>
+    <div class="num"><span id="speed">0</span><span class="lbl">KM/H</span></div></div>
+</div>
 <div id="reticle"></div>
 <div id="trick"></div>
 <div id="flash"></div>
 <div id="help" class="hide">
-  <div><b>WASD</b>move / steer swing</div>
-  <div><b>MOUSE</b>look</div>
-  <div><b>SPACE</b>jump · hold in air to swing</div>
-  <div><b>LEFT CLICK</b>hold to swing</div>
-  <div><b>F / RIGHT CLICK</b>web-zip to aimed point</div>
+  <div><b>WASD</b>move · steer a swing</div>
+  <div><b>SPACE / CLICK</b>jump · hold to swing</div>
+  <div><b>F / RIGHT CLICK</b>slingshot to the reticle</div>
   <div><b>SHIFT</b>sprint · dive · wall-run</div>
-  <div><b>WALLS</b>let go of swing, steer in to stick</div>
   <div><b>Q Z E R</b>flip · backflip · corkscrew · spin</div>
-  <div><b>X</b>restart from the rooftop</div>
-  <div><b>G</b>graphics quality (auto-adjusts)</div>
-  <div><b>T</b>time of day &nbsp; <b style="min-width:0">M</b>&nbsp;sound &nbsp; <b style="min-width:0">H</b>&nbsp;hide help</div>
+  <div><b>WALLS</b>let go and steer in to cling</div>
+  <div><b>T</b>time of day</div>
+  <div><b>G</b>graphics level</div>
+  <div><b>X</b>restart · <b>M</b>mute · <b>H</b>hide this</div>
 </div>
-<div class="overlay" id="start">
-  <div class="title">SKYTHREAD</div>
+<div id="start" class="overlay">
+  <div class="title">SKY<i>THREAD</i></div>
+  <div class="thread"></div>
   <div class="sub">SWING THE BIG CITY</div>
-  <div class="cta">CLICK TO SWING</div>
+  <div class="cta" id="cta">BUILDING THE CITY…</div>
   <div class="keys">
-    <span><b>SPACE</b>jump, then hold to swing</span>
-    <span><b>F</b>web-zip / point launch</span>
-    <span><b>Q Z E R</b>air tricks</span>
-    <span><b>WASD</b>steer</span>
-    <span><b>SHIFT</b>dive &amp; sprint</span>
-    <span><b>STEER INTO WALLS</b>to climb</span>
+    <span><b>WASD</b>move</span><span><b>MOUSE</b>look</span><span><b>SPACE / CLICK</b>hold to swing</span>
+    <span><b>F</b>slingshot</span><span><b>SHIFT</b>sprint · dive</span><span><b>Q Z E R</b>tricks</span>
   </div>
 </div>
-<div class="overlay" id="pause"><div class="cta">PAUSED — CLICK TO RESUME</div></div>
+<div id="pause" class="overlay"><div class="cta">CLICK TO RESUME</div></div>
 <script>/*__GAME__*/</script>
 </body>
 </html>
