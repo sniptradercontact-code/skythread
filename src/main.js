@@ -29,11 +29,11 @@ const FORCE_Q = QS.has('q') ? clamp(+QS.get('q') || 0, 0, 4) : QS.has('low') ? 4
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 // near/far: how far detailed and simple cars are drawn; peds: how many people at once
 const QUALITY = [
-  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 1, near: 190, far: 1100, peds: 1800, pedR: 260, detail: true, trees: 1 },
-  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 2, near: 160, far: 900, peds: 1400, pedR: 240, detail: true, trees: 1 },
-  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 1536, shEvery: 2, near: 140, far: 700, peds: 1000, pedR: 210, detail: true, trees: 1 },
-  { name: 'LOW', pr: 0.8, msaa: 0, direct: true, sh: 1024, shEvery: 3, near: 110, far: 500, peds: 650, pedR: 170, detail: false, trees: 0.7 },
-  { name: 'BASIC', pr: 0.6, msaa: 0, direct: true, sh: 0, shEvery: 1, near: 90, far: 380, peds: 380, pedR: 130, detail: false, trees: 0.4 },
+  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 1, near: 190, far: 1100, peds: 2500, pedR: 270, detail: true, trees: 1 },
+  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 2, near: 160, far: 900, peds: 1900, pedR: 250, detail: true, trees: 1 },
+  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 1536, shEvery: 2, near: 140, far: 700, peds: 1350, pedR: 220, detail: true, trees: 1 },
+  { name: 'LOW', pr: 0.8, msaa: 0, direct: true, sh: 1024, shEvery: 3, near: 110, far: 500, peds: 850, pedR: 180, detail: false, trees: 0.7 },
+  { name: 'BASIC', pr: 0.6, msaa: 0, direct: true, sh: 0, shEvery: 1, near: 90, far: 380, peds: 480, pedR: 140, detail: false, trees: 0.4 },
 ];
 // the automatic tuner walks this ladder of (tier, resolution scale) steps
 const LADDER = [[0, 1], [1, 1], [2, 1], [2, 0.85], [3, 1], [3, 0.85], [4, 1]];
@@ -56,7 +56,10 @@ for (const m of world.streetMats) { m.emissiveMap = m.map; m.emissive.set(0xffb4
 
 // ---------------------------------------------------------------- sky + lights
 const sky = new Sky(); sky.scale.setScalar(9000); scene.add(sky);
-const envScene = new THREE.Scene(); const envSky = new Sky(); envSky.scale.setScalar(50); envScene.add(envSky);
+// cap the sky's brightness so the sun cannot flood the bloom pass
+const capSky = (m) => { m.fragmentShader = m.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( min( texColor, vec3( 1.9 ) ), 1.0 );'); m.needsUpdate = true; };
+capSky(sky.material);
+const envScene = new THREE.Scene(); const envSky = new Sky(); envSky.scale.setScalar(50); envScene.add(envSky); envSky.material.fragmentShader = envSky.material.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( min( texColor, vec3( 1.9 ) ), 1.0 );');
 const pmrem = new THREE.PMREMGenerator(renderer);
 let envRT = null;
 const sun = new THREE.DirectionalLight(0xffffff, 3);
@@ -69,9 +72,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.72, fog: 0xd9a983, fogD: 0.0004, exp: 0.43, win: 0.5, env: 0.42, clouds: 0.4, bloom: 0.22, bloomT: 2.3, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.78, fog: 0xa9bcd0, fogD: 0.00028, exp: 0.42, win: 0.05, env: 0.32, clouds: 0.45, bloom: 0.1, bloomT: 2.8, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00042, exp: 0.82, win: 1.35, env: 0.9, clouds: 0.2, bloom: 0.3, bloomT: 1.15, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.72, fog: 0xd9a983, fogD: 0.0004, exp: 0.43, win: 0.5, env: 0.42, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.78, fog: 0xa9bcd0, fogD: 0.00028, exp: 0.42, win: 0.05, env: 0.32, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00042, exp: 0.82, win: 1.35, env: 0.9, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -102,8 +105,10 @@ function applyTOD(i) {
   renderer.toneMappingExposure = t.exp;
   const night = t.night > 0.5;
   for (const m of world.facadeMats) m.emissiveIntensity = t.win;
+  world.shopMat.emissiveIntensity = night ? 2.1 : Math.max(t.win, 0.35);
+  world.setStreetLight(t.light, t.neon);
   for (const m of world.streetMats) m.emissiveIntensity = night ? 0.55 : 0;
-  world.lampMat.emissiveIntensity = night ? 3.2 : t.win > 0.3 ? 1.6 : 0.3;
+  world.lampMat.emissiveIntensity = night ? 3.0 : t.win > 0.3 ? 2.0 : 0.3;
   world.glowMat.color.setScalar(night ? 1.6 : 1.2);
   world.nightMat.color.setScalar(night ? 0.62 : 0.4);
   world.setNight(night || t.win > 0.3);
@@ -158,7 +163,7 @@ function buildComposer(q) {
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   if (q.dof) { dof = new DofPass(DofShader); composer.addPass(dof); }
-  if (q.bloom) { bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.55, 0.95); composer.addPass(bloom); }
+  if (q.bloom) { bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.1, 0.35, 2.5); composer.addPass(bloom); }
   composer.addPass(new OutputPass());
 }
 function applyPost() { if (bloom) { bloom.strength = TOD[todIdx].bloom; bloom.threshold = TOD[todIdx].bloomT; } }
@@ -244,7 +249,7 @@ const keys = {};
 const ev = { jump: false, swing: false, zip: false, trick: null };
 let mouse0 = false, locked = false, everLocked = false, started = false, lastMouse = 0, dragging = false;
 // the camera eases toward yawT/pitchT; position never changes where it points
-const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4 };
+const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0 };
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -273,6 +278,7 @@ canvas.addEventListener('mousedown', (e) => {
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouse0 = false; dragging = false; });
 addEventListener('mousemove', (e) => {
+  C.mN++;
   if (!(locked || (dragging && !everLocked))) return;
   const dx = e.movementX || 0, dy = e.movementY || 0, mag = Math.abs(dx) + Math.abs(dy);
   // browsers occasionally report one huge bogus pointer-lock delta; a real hand ramps up to speed
@@ -284,6 +290,7 @@ addEventListener('mousemove', (e) => {
 });
 function tryLock() {
   const plain = () => { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} };
+  if (QS.has('plainlock')) return plain();
   try { // raw input first: no OS acceleration, and it avoids the delta spikes that made the view jump
     const r = canvas.requestPointerLock({ unadjustedMovement: true });
     if (r && r.catch) r.catch(plain);
@@ -298,7 +305,7 @@ document.addEventListener('pointerlockchange', () => {
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('help').classList.remove('hide');
   setTimeout(() => document.getElementById('help').classList.add('hide'), 30000);
-  started = true; document.body.classList.add('playing'); document.getElementById('start').classList.add('gone'); initAudio(); tryLock();
+  started = true; document.body.classList.add('playing'); document.getElementById('start').classList.add('gone'); if (!QS.has('noaudio')) initAudio(); if (!QS.has('nolock')) tryLock();
 });
 document.getElementById('pause').addEventListener('click', () => tryLock());
 function camFwdH(out) { return out.set(Math.sin(C.yaw), 0, Math.cos(C.yaw)); }
@@ -1285,15 +1292,15 @@ $('cta').textContent = 'CLICK TO START';
     P.rpos.copy(P.prev).lerp(P.pos, clamp(acc / h, 0, 1));
     if (ev.trick) { startTrick(ev.trick); ev.trick = null; }
   } else { ev.trick = null; if (!started) { time += dt; C.yawT += dt * 0.04; } }
-  if (!paused || !started) world.update(dt, time);
+  if (!paused || !started) world.update(dt, time, camera.position.x, camera.position.z);
   updateAnim(paused ? 0 : dt, time);
   updateCamera(dt, now, time);
-  try { life.update(dt, time, camera.position.x, camera.position.y, camera.position.z, C.yaw); } catch (e) { reportOnce(e); }
+  try { life.update(dt, time, camera.position.x, camera.position.y, camera.position.z, C.yaw, zoneNow === 'CENTRAL PARK' || zoneNow === 'BATTERY PARK'); } catch (e) { reportOnce(e); }
   if ((zipTick = (zipTick + 1) % 3) === 0) computeZip();
   updateRope(paused ? 0 : dt);
   try { updateHUD(dt, rawDt); } catch (e) { reportOnce(e); }
   try { updateAudio(paused ? 0 : dt); } catch (e) { reportOnce(e); }
-  autoQuality(dt);
+  autoQuality(Math.min(rawDt, 1));   // real time, so slow frames are measured as slow
   const q = QUALITY[qIdx];
   if (dbgCam) { if (dbgCam.f) { camera.position.copy(P.rpos).add(dbgCam.p); camera.lookAt(P.rpos.x, P.rpos.y + dbgCam.t.y, P.rpos.z); } else { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); } }
   if (q.sh > 0 && frameNo % q.shEvery === 0) placeSun();

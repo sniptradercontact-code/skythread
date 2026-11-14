@@ -308,7 +308,7 @@ export function buildWorld(scene, renderer) {
   // chunk buckets: everything static is grouped by district-sized chunks for frustum culling
   const buckets = {};
   let B = null;
-  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: STYLES.map(() => new GB()), shop: new GB(), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), geos: [], trees: [], lamps: [] }));
+  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: STYLES.map(() => new GB()), shop: new GB(), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), geos: [], trees: [], lamps: [] }));
   const cellB = (i, j) => useB('c' + Math.floor(clampN(i, 0, NA - 1) / 3) + '_' + Math.floor(clampN(j, 0, NS - 1) / 4));
   const bbSpots = [], map = { b: [], slabs: [], feats: [], lands: [], lines: [] };
   const vents = [];
@@ -318,6 +318,8 @@ export function buildWorld(scene, renderer) {
     path: C3(0xc9b68c), water: C3(0x2a5a78), quay: C3(0x8f8c86), land: C3(0x4c5148), wood: C3(0x6b4a2f), signal: C3(0xd9a516), pier: C3(0x7b6a55),
     red: C3(0xb3261e), green: C3(0x1f4d33), blue: C3(0x1f3f7a), scaf: C3(0x245a3c), glass: C3(0x8fb3c7), door: C3(0x3a2c22),
   };
+  const SPILL = [[1, 0.8, 0.52], [1, 0.9, 0.7], [0.85, 0.93, 1], [1, 0.68, 0.45], [1, 0.86, 0.6]];
+  const NEON = [[2.2, 0.25, 0.5], [0.2, 1.8, 2.2], [2.2, 1.5, 0.2], [0.4, 2.1, 0.6], [2.0, 0.5, 2.2], [2.2, 0.7, 0.15], [2.2, 2.0, 1.6], [0.35, 0.7, 2.3]];
   const ROOFS = [C3(0x5d5c5a), C3(0x6b6862), C3(0x4c4b4a), C3(0x75695a), C3(0x8a8880), C3(0x57604f), C3(0x3f3e3d)];
   const CROWN = [[2.2, 1.9, 1.3], [0.5, 1.8, 2.2], [2.2, 0.5, 1.6], [0.5, 2.0, 0.8], [2.2, 1.3, 0.3], [1.9, 1.9, 2.2]];
   const tintOf = (st) => { const b = st < 4 ? rr(0.8, 1.15) : rr(0.78, 1.12), j = st < 4 ? 0.1 : 0.06; return [b * (1 + rr(-j, j)), b * (1 + rr(-j, j)), b * (1 + rr(-j, j))]; };
@@ -340,7 +342,7 @@ export function buildWorld(scene, renderer) {
     const w = x1 - x0, d = z1 - z0; if (w < 8 || d < 8) return;
     const n = 1 + ((rnd() * 4) | 0);
     for (let i = 0; i < n; i++) { const bw = rr(1.6, 4.5), bd = rr(1.6, 4.5), bh = rr(1.0, 2.6); const ux = rr(x0 + 3, x1 - 3), uz = rr(z0 + 3, z1 - 3); box3(bw, bh, bd, ux, y + bh / 2, uz, rnd() < 0.5 ? K.metal : K.dark); addBox(ux - bw / 2, ux + bw / 2, y, y + bh, uz - bd / 2, uz + bd / 2).prop = true; }
-    if (rnd() < 0.7) { const sx = rr(x0 + 3, x1 - 3), sz = rr(z0 + 3, z1 - 3); B.flat.box(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4, K.trim); B.flat.box(sx - 0.5, sx + 0.5, y, y + 2.1, sz + 1.4, sz + 1.46, K.door); addBox(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4).prop = true; }   // stair bulkhead with a door
+    if (rnd() < 0.7) { const sx = rr(x0 + 3, x1 - 3), sz = rr(z0 + 3, z1 - 3); B.flat.box(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4, K.trim); B.flat.box(sx - 0.5, sx + 0.5, y, y + 2.1, sz + 1.4, sz + 1.46, K.door); B.night.box(sx - 0.16, sx + 0.16, y + 2.25, y + 2.42, sz + 1.46, sz + 1.58, [2.4, 1.8, 1.0]); addBox(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4).prop = true; }   // stair bulkhead with a door
     if (h < 95 && rnd() < 0.5) { // rooftop water tank
       const cx = rr(x0 + 4, x1 - 4), cz = rr(z0 + 4, z1 - 4);
       box3(2.6, 3, 2.6, cx, y + 1.5, cz, K.dark); cone(cx, cz, y + 3, 2.1, 2.1, 4, 8, K.wood); cone(cx, cz, y + 7, 2.3, 0.1, 1.6, 8, K.wood);
@@ -482,6 +484,7 @@ export function buildWorld(scene, renderer) {
     }
     if (rnd() < 0.3) { const z = rr(z0 + 12, z1 - 12), s = rnd() < 0.5, x = s ? x0 + 1.2 : x1 - 1.2; F.box(x - 0.75, x + 0.75, SH + 2.45, SH + 2.6, z - 2.1, z + 2.1, K.dark, true); F.box(x + (s ? 0.62 : -0.7), x + (s ? 0.7 : -0.62), SH + 0.3, SH + 2.45, z - 2.0, z + 2.0, K.glass); F.box(x - 0.05, x + 0.05, SH, SH + 2.45, z - 2.05, z - 1.95, K.metal); F.box(x - 0.05, x + 0.05, SH, SH + 2.45, z + 1.95, z + 2.05, K.metal); }   // bus shelter
     if (rnd() < 0.22) { const x = rr(x0 + 10, x1 - 10), z = rnd() < 0.5 ? z0 + 1.3 : z1 - 1.3; F.box(x - 1.3, x + 1.3, SH, SH + 2.5, z - 0.8, z + 0.8, K.green); F.box(x - 1.5, x + 1.5, SH + 2.5, SH + 2.65, z - 1.1, z + 1.1, K.dark, true); }                     // newsstand
+    if (rnd() < 0.42) { const sx = rnd() < 0.5, x = sx ? x0 + rr(4, 9) : x1 - rr(4, 9), z = rnd() < 0.5 ? z0 + 1.4 : z1 - 1.4; F.box(x - 0.8, x + 0.8, SH + 0.25, SH + 1.1, z - 0.5, z + 0.5, K.metal, true); F.box(x - 0.03, x + 0.03, SH + 1.1, SH + 2.2, z - 0.03, z + 0.03, K.dark); cone(x, z, SH + 2.1, 1.35, 0.05, 0.55, 8, pick([C3(0xc8372f), C3(0xe0a422), C3(0x2f6fb0), C3(0x2f8a57)])); }   // vendor cart under an umbrella
     if (rnd() < 0.35) vents.push([rnd() < 0.5 ? x0 - rr(3, 10) : x1 + rr(3, 10), rr(z0 + 6, z1 - 6)]);                                                                                                                                                       // steam vent in the avenue
   }
 
@@ -504,14 +507,36 @@ export function buildWorld(scene, renderer) {
       continue;
     }
     B.walk.top(x0, x1, z0, z1, SH, 4, WHITE);
-    for (const t of [0.25, 0.75]) { B.lamps.push([x0 + (x1 - x0) * t, z0 + 0.9, 0], [x0 + (x1 - x0) * t, z1 - 0.9, Math.PI]); }
-    B.lamps.push([x0 + 0.9, (z0 + z1) / 2, Math.PI / 2], [x1 - 0.9, (z0 + z1) / 2, -Math.PI / 2]);
+    for (const t of [0.125, 0.375, 0.625, 0.875]) { B.lamps.push([x0 + (x1 - x0) * t, z0 + 0.9, 0], [x0 + (x1 - x0) * t, z1 - 0.9, Math.PI]); }
+    for (const t of [0.27, 0.73]) B.lamps.push([x0 + 0.9, z0 + (z1 - z0) * t, Math.PI / 2], [x1 - 0.9, z0 + (z1 - z0) * t, -Math.PI / 2]);
     if (rnd() < 0.6) for (let s = x0 + 8; s < x1 - 12; s += 20) { B.trees.push([s, SH, z0 + 1.9, rr(0.75, 1.05), 0]); B.trees.push([s + 9, SH, z1 - 1.9, rr(0.75, 1.05), 0]); }
     props(x0, x1, z0, z1);
     const ax0 = x0 + WALK, ax1 = x1 - WALK, az0 = z0 + WALK, az1 = z1 - WALK;
     if (landmark(i, j, ax0, ax1, az0, az1)) continue;
+    { // light spilling out of the shopfronts across the sidewalk
+      const y = SH + 0.12, c = () => { const q = pick(SPILL), k = rr(0.7, 1); return [q[0] * k, q[1] * k, q[2] * k]; }, F = [0.5, 0.5], E = [0.97, 0.5];
+      let q = c(); B.spill.quad([ax0, y, az0], [ax1, y, az0], [ax1, y, z0], [ax0, y, z0], [0, 1, 0], F, F, E, E, q);
+      q = c(); B.spill.quad([ax0, y, az1], [ax1, y, az1], [ax1, y, z1], [ax0, y, z1], [0, 1, 0], F, F, E, E, q);
+      q = c(); B.spill.quad([ax0, y, az0], [ax0, y, az1], [x0, y, az1], [x0, y, az0], [0, 1, 0], F, F, E, E, q);
+      q = c(); B.spill.quad([ax1, y, az0], [ax1, y, az1], [x1, y, az1], [x1, y, az0], [0, 1, 0], F, F, E, E, q);
+    }
     const tsq = (i === 4 || i === 5) && j >= 14 && j <= 15;
     const lots = tsq ? fill(ax0, ax1, az0, az1, zn, i, j, 56, 120) : fill(ax0, ax1, az0, az1, zn, i, j, 0, 0, zn === 'midtown' && j === 18 && i >= 2 && i <= 6);
+    { // blade signs hung off the shopfronts
+      const np = zn === 'midtown' || zn === 'fidi' ? 0.62 : zn === 'village' ? 0.48 : 0.3;
+      const sign = (x, z, nx, nz, lh) => {
+        const h = Math.min(rr(2.2, 5.2), lh - 7.5); if (h < 1.4) return;
+        const c = pick(NEON), y = rr(5.6, 7), t = 0.13, o = 1.25;
+        if (nx) B.neon.box(Math.min(x, x + nx * o), Math.max(x, x + nx * o), y, y + h, z - t, z + t, c, true);
+        else B.neon.box(x - t, x + t, y, y + h, Math.min(z, z + nz * o), Math.max(z, z + nz * o), c, true);
+      };
+      for (const l of lots) {
+        if (l.x1 - l.x0 > 5 && Math.abs(l.z0 - az0) < 0.1 && rnd() < np) sign(rr(l.x0 + 2, l.x1 - 2), l.z0, 0, -1, l.h);
+        if (l.x1 - l.x0 > 5 && Math.abs(l.z1 - az1) < 0.1 && rnd() < np) sign(rr(l.x0 + 2, l.x1 - 2), l.z1, 0, 1, l.h);
+        if (Math.abs(l.x0 - ax0) < 0.1 && rnd() < np) sign(l.x0, rr(l.z0 + 2, l.z1 - 2), -1, 0, l.h);
+        if (Math.abs(l.x1 - ax1) < 0.1 && rnd() < np) sign(l.x1, rr(l.z0 + 2, l.z1 - 2), 1, 0, l.h);
+      }
+    }
     if (tsq) { // bright-lights crossroads: big screens facing the avenue between the two columns
       const L = i === 4 ? lots.filter((l) => l.x1 > ax1 - 1) : lots.filter((l) => l.x0 < ax0 + 1);
       for (const l of L) {
@@ -539,15 +564,34 @@ export function buildWorld(scene, renderer) {
     oval(cx - 90, z0 + (z1 - z0) * 0.3, 62, 34, K.water, 0.04, 0);         // the lake
     oval(cx + 60, z0 + (z1 - z0) * 0.45, 86, 44, K.lawn, 0.03, 1);         // great lawn
     oval(cx + 40, z0 + (z1 - z0) * 0.1, 70, 30, K.lawn, 0.03, 1);          // meadow
-    const P = (a, b, c, d) => { B.flat.top(a, b, c, d, SH + 0.06, 8, K.path); map.lines.push([a, b, c, d, 0]); };
+    const paths = [];
+    const P = (a, b, c, d) => { B.flat.top(a, b, c, d, SH + 0.06, 8, K.path); map.lines.push([a, b, c, d, 0]); paths.push([a, b, c, d]); };
     P(x0 + 22, x1 - 22, z0 + 20, z0 + 24); P(x0 + 22, x1 - 22, z1 - 24, z1 - 20); P(x0 + 22, x0 + 26, z0 + 20, z1 - 20); P(x1 - 26, x1 - 22, z0 + 20, z1 - 20);
-    for (const f of [0.2, 0.56, 0.87]) P(x0 + 22, x1 - 22, z0 + (z1 - z0) * f - 1.6, z0 + (z1 - z0) * f + 1.6);
-    for (let t = 0, n = 0; n < 1300 && t < 7000; t++) {
-      const tx = rr(x0 + 4, x1 - 4), tz = rr(z0 + 4, z1 - 4);
-      if (feat.some(([ox, oz, rx, rz]) => ((tx - ox) / rx) ** 2 + ((tz - oz) / rz) ** 2 < 1)) continue;
-      B.trees.push([tx, SH, tz, rr(0.9, 1.7), rnd() < 0.12 ? 1 : 0]); n++;
+    const hz = [0.2, 0.56, 0.87].map((f) => z0 + (z1 - z0) * f);
+    for (const zc of hz) P(x0 + 22, x1 - 22, zc - 1.6, zc + 1.6);
+    // a fountain plaza on the middle path
+    const fx = cx - 150, fz = hz[1];
+    B.flat.disc(fx, fz, 13, 13, SH + 0.07, 18, K.path); feat.push([fx, fz, 15, 15]);
+    cone(fx, fz, SH, 5.6, 5.6, 0.7, 14, K.stone); B.flat.disc(fx, fz, 5.1, 5.1, SH + 0.72, 14, K.water); cone(fx, fz, SH, 0.7, 0.5, 2.3, 8, K.stone); cone(fx, fz, SH + 2.2, 0.4, 1.7, 0.5, 10, K.stone); cone(fx, fz, SH + 2.6, 0.22, 0.03, 1.7, 6, C3(0xdfeef5));
+    addBox(fx - 5, fx + 5, 0, SH + 0.7, fz - 5, fz + 5).prop = true;
+    // lamps and benches along every path; trees everywhere else, split into quarters so they cull with the view
+    const pq = [0, 1, 2, 3].map((q) => buckets['park' + q] || useB('park' + q)); useB('park');
+    const quarter = (z) => pq[clampN(Math.floor(((z - z0) / (z1 - z0)) * 4), 0, 3)];
+    const bench = (x, z, alongX) => { const a = alongX ? 0.9 : 0.25, b2 = alongX ? 0.25 : 0.9; B.flat.box(x - a, x + a, SH + 0.38, SH + 0.46, z - b2, z + b2, K.wood, true); B.flat.box(x - (alongX ? 0.9 : 0.04), x + (alongX ? 0.9 : 0.04), SH + 0.46, SH + 0.95, z - (alongX ? 0.04 : 0.9), z + (alongX ? 0.04 : 0.9), K.green); };
+    for (const zc of [z0 + 22, ...hz, z1 - 22]) for (let x = x0 + 34, k = 0; x < x1 - 30; x += 15, k++) {
+      if (Math.abs(x - fx) < 15 && zc === fz) continue;
+      if (k % 2 === 0) quarter(zc).lamps.push(k % 4 ? [x, zc + 2.5, 0] : [x, zc - 2.5, Math.PI]); else bench(x, zc + (k % 4 === 1 ? 2.6 : -2.6), true);
     }
-    for (let s = z0 + 30; s < z1 - 20; s += 55) { B.lamps.push([x0 + 24, s, Math.PI / 2], [x1 - 24, s, -Math.PI / 2]); }
+    for (const xc of [x0 + 24, x1 - 24]) for (let z = z0 + 36, k = 0; z < z1 - 32; z += 15, k++) {
+      if (k % 2 === 0) quarter(z).lamps.push(k % 4 ? [xc + 2.5, z, Math.PI / 2] : [xc - 2.5, z, -Math.PI / 2]); else bench(xc + (k % 4 === 1 ? 2.6 : -2.6), z, false);
+    }
+    for (let t = 0, n = 0; n < 2900 && t < 20000; t++) {
+      const tx = rr(x0 + 3, x1 - 3), tz = rr(z0 + 3, z1 - 3);
+      if (feat.some(([ox, oz, rx, rz]) => ((tx - ox) / rx) ** 2 + ((tz - oz) / rz) ** 2 < 1)) continue;
+      if (paths.some(([a, b, c, d]) => tx > a - 1.6 && tx < b + 1.6 && tz > c - 1.6 && tz < d + 1.6)) continue;
+      quarter(tz).trees.push([tx, SH, tz, rr(0.9, 1.85), rnd() < 0.12 ? 1 : 0]); n++;
+    }
+    Object.assign(parkRect, { hz, water: [[cx + 20, z0 + (z1 - z0) * 0.68, 154, 82], [cx - 90, z0 + (z1 - z0) * 0.3, 66, 38], [fx, fz, 7, 7]], fountain: [fx, fz] });
   }
 
   // ---------------------------------------------------------------- outer boroughs, piers, bridges
@@ -613,13 +657,25 @@ export function buildWorld(scene, renderer) {
   }
 
   // ---------------------------------------------------------------- build chunk meshes
-  const treeMeshes = [], nightMeshes = [];
+  const treeMeshes = [], nightMeshes = [], lightMeshes = [];
+  const [gcv, gg] = mk(128, 128), ggr = gg.createRadialGradient(64, 64, 0, 64, 64, 64);
+  ggr.addColorStop(0, '#ffffff'); ggr.addColorStop(0.25, '#9a9a9a'); ggr.addColorStop(0.6, '#2c2c2c'); ggr.addColorStop(1, '#000000'); gg.fillStyle = ggr; gg.fillRect(0, 0, 128, 128);
+  const glowTex = new THREE.CanvasTexture(gcv); glowTex.colorSpace = THREE.SRGBColorSpace;
+  const addOpt = { map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false };
+  const poolMat = new THREE.MeshBasicMaterial({ ...addOpt, color: 0xffb060, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const spillMat = new THREE.MeshBasicMaterial({ ...addOpt, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const haloMat = new THREE.PointsMaterial({ ...addOpt, color: 0xffc890, size: 3.6, sizeAttenuation: true });
+  haloMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <fog_vertex>', 'gl_PointSize = min(gl_PointSize, 70.0);\n#include <fog_vertex>'); };   // never let a halo fill the screen when you brush past a lamp
+  const neonMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const poolG = new THREE.PlaneGeometry(20, 20).rotateX(-Math.PI / 2).translate(0, 0.2, -2.0);
   const dm = new THREE.Object3D(), col = new THREE.Color();
   const addMesh = (geo, mat, cast = true, recv = true) => { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = recv; m.matrixAutoUpdate = false; scene.add(m); return m; };
   // low-poly trees: forked trunk + three faceted lobes, swayed by wind in the vertex shader
   const trunkG = mergeGeometries([new THREE.CylinderGeometry(0.15, 0.3, 3, 5, 1, true).translate(0, 1.5, 0), new THREE.CylinderGeometry(0.07, 0.13, 1.7, 4, 1, true).translate(0, 0.85, 0).rotateZ(0.6).translate(0.05, 2.5, 0), new THREE.CylinderGeometry(0.06, 0.12, 1.5, 4, 1, true).translate(0, 0.75, 0).rotateZ(-0.55).rotateY(1.2).translate(-0.05, 2.8, 0)]);
   const lobe = (r, sy, x, y, z) => { const g = new THREE.IcosahedronGeometry(r, 0); const pa = g.attributes.position; for (let v = 0; v < pa.count; v++) { const m = 1 + Math.sin(pa.getX(v) * 12.9 + pa.getY(v) * 78.2 + pa.getZ(v) * 37.7) * 0.16; pa.setXYZ(v, pa.getX(v) * m, pa.getY(v) * m * sy, pa.getZ(v) * m); } g.translate(x, y, z); return g; };
   const crownG = mergeGeometries([lobe(2.2, 0.9, 0, 4.7, 0), lobe(1.5, 0.9, 1.0, 5.9, 0.4), lobe(1.4, 0.85, -0.9, 5.5, -0.5)]); crownG.computeVertexNormals();
+  const farCrownG = lobe(2.55, 0.95, 0, 5.1, 0); farCrownG.computeVertexNormals();
+  const treeSets = [];
   const swayU = { value: 0 };
   const crownMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   crownMat.onBeforeCompile = (sh) => {
@@ -645,6 +701,8 @@ export function buildWorld(scene, renderer) {
     if (b.walk.p.length) addMesh(b.walk.geo(), walkMat, false, true);
     if (b.ground.p.length) addMesh(b.ground.geo(), groundMat, false, true);
     if (b.night.p.length) { const m = addMesh(b.night.geo(), nightMat, false, false); m.visible = false; nightMeshes.push(m); }
+    if (b.neon.p.length) addMesh(b.neon.geo(), neonMat, false, false);
+    if (b.spill.p.length) { const m = addMesh(b.spill.geo(), spillMat, false, false); m.renderOrder = 2; m.visible = false; lightMeshes.push(m); }
     const T = b.trees;
     if (T.length) {
       for (let i = T.length - 1; i > 0; i--) { const k = (rnd() * (i + 1)) | 0; const t = T[i]; T[i] = T[k]; T[k] = t; }
@@ -656,12 +714,24 @@ export function buildWorld(scene, renderer) {
         cr.setColorAt(i, col);
       });
       for (const m of [tr, cr]) { m.castShadow = true; m.receiveShadow = true; m.userData.full = T.length; scene.add(m); treeMeshes.push(m); }
+      // far away the same trees are drawn as one faceted blob each, with no trunk
+      const fr = new THREE.InstancedMesh(farCrownG, crownMat, T.length); fr.instanceMatrix = cr.instanceMatrix; fr.instanceColor = cr.instanceColor;
+      fr.userData.full = T.length; fr.userData.far = true; fr.visible = false; scene.add(fr); treeMeshes.push(fr);
+      let sx = 0, sz = 0; for (const t of T) { sx += t[0]; sz += t[2]; } sx /= T.length; sz /= T.length;
+      let rad = 0; for (const t of T) rad = Math.max(rad, Math.hypot(t[0] - sx, t[2] - sz));
+      treeSets.push({ near: [tr, cr], far: fr, cx: sx, cz: sz, r: rad, isFar: false });
       NT += T.length;
     }
     if (b.lamps.length) {
       const po = new THREE.InstancedMesh(poleG, poleMat, b.lamps.length), he = new THREE.InstancedMesh(headG, lampMat, b.lamps.length);
       b.lamps.forEach(([x, z, ry], k) => { dm.position.set(x, SH, z); dm.rotation.set(0, ry, 0); dm.scale.set(1, 1, 1); dm.updateMatrix(); po.setMatrixAt(k, dm.matrix); he.setMatrixAt(k, dm.matrix); });
       scene.add(po, he); NL += b.lamps.length;
+      // each lamp throws a warm pool on the street and carries a soft halo
+      const pool = new THREE.InstancedMesh(poolG, poolMat, b.lamps.length), hp = [];
+      b.lamps.forEach(([x, z, ry], k) => { dm.position.set(x, SH, z); dm.rotation.set(0, ry, 0); dm.updateMatrix(); pool.setMatrixAt(k, dm.matrix); hp.push(x - 2 * Math.sin(ry), SH + 7.4, z - 2 * Math.cos(ry)); });
+      const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.Float32BufferAttribute(hp, 3));
+      const halo = new THREE.Points(hg, haloMat);
+      for (const m of [pool, halo]) { m.renderOrder = 2; m.visible = false; m.matrixAutoUpdate = false; scene.add(m); lightMeshes.push(m); }
     }
   }
   const sig = {}; for (const k in sigB) { sig[k] = addMesh(sigB[k].geo(), glowMat, false, false); sig[k].frustumCulled = false; }
@@ -753,15 +823,24 @@ export function buildWorld(scene, renderer) {
   const spawn = { x: -HALFX + 4.5 * BX, z: -HALFZ + 9.6 * BZ };
   function setDensity(f, treeShadows) {
     const tf = f >= 1 ? 1 : f > 0.6 ? 0.8 : 0.55;
-    for (const m of treeMeshes) { m.count = Math.max(1, Math.round(m.userData.full * tf)); m.castShadow = treeShadows; }
+    for (const m of treeMeshes) { m.count = Math.max(1, Math.round(m.userData.full * tf)); m.castShadow = treeShadows && !m.userData.far; }
   }
   function setDetail(hi) { // drop the per-pixel extras on the lowest tiers
     for (let i = 0; i < facadeMats.length; i++) { const want = hi ? facadeTex[i].nrm : null; if (facadeMats[i].normalMap !== want) { facadeMats[i].normalMap = want; facadeMats[i].needsUpdate = true; } }
   }
   function setNight(on) { for (const m of nightMeshes) m.visible = on; }
+  function setStreetLight(k, neon) { // k: 0 day .. 1 night
+    for (const m of lightMeshes) m.visible = k > 0.01;
+    poolMat.opacity = 0.5 * k; spillMat.opacity = 0.6 * k; haloMat.opacity = Math.min(1, k * 1.2); neonMat.color.setScalar(neon);
+  }
   let lastPh = -1;
-  function update(dt, time) {
+  let lodTick = 0;
+  function update(dt, time, cx = 0, cz = 0) {
     swayU.value = time;
+    if (++lodTick % 15 === 0) for (const t of treeSets) {
+      const d = Math.hypot(t.cx - cx, t.cz - cz) - t.r, far = t.isFar ? d > 380 : d > 440;
+      if (far !== t.isFar) { t.isFar = far; t.near[0].visible = t.near[1].visible = !far; t.far.visible = far; }
+    }
     waterN.offset.set(time * 0.006, time * 0.0045);
     clouds.position.x = time * 2.2;
     const tc = ((time % CYC) + CYC) % CYC, ph = (tc < AVE_GO - 1.5 ? 1 : 0) | (tc >= ST_T0 && tc < ST_T0 + ST_GO - 1.5 ? 2 : 0);
@@ -771,6 +850,6 @@ export function buildWorld(scene, renderer) {
       if (fr !== b.frame) { b.frame = fr; drawBB(b.g, b.brand + Math.floor(time / 7 + i * 0.25), time); b.tex.needsUpdate = true; }
     }
   }
-  return { facadeMats: [...facadeMats, shopMat], update, setDensity, setDetail, setNight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, MAP, drawMap, vents, parkRect,
+  return { facadeMats, shopMat, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, MAP, drawMap, vents, parkRect,
     stats: { boxes: boxes.length, trees: NT, lamps: NL, boards: bbSpots.length, spans: spans.length, chunks: Object.keys(buckets).length, facadeMeshes: chunkMeshes } };
 }

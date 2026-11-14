@@ -284,19 +284,32 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   for (let j = 0; j < NS; j++) for (let i = 0; i < NA; i++) {
     if (!cellOK(i, j) || inPark(i, j)) continue;
     const cx = -HALFX + (i + 0.5) * BX, cz = -HALFZ + (j + 0.5) * BZ, start = peds.length / 14;
-    const n = j === 0 ? 16 : j <= 6 ? 44 : j <= 11 ? 30 : j <= 18 ? ((i === 4 || i === 5) && (j === 14 || j === 15) ? 90 : 46) : j <= 27 ? 24 : 20;
+    const n = j === 0 ? 22 : j <= 6 ? 58 : j <= 11 ? 40 : j <= 18 ? ((i === 4 || i === 5) && (j === 14 || j === 15) ? 120 : 62) : j <= 27 ? 32 : 26;
     for (let k = 0; k < n; k++) { const off = rr(-1.8, 0.2); addPed(cx, cz, 67.5 + off, 27.5 + off, walkSpeed()); }
     blocks.push({ cx, cz, ex: 70, ez: 30, start, count: n });
   }
-  { // the park: walkers and joggers on the loop, people out on the lawns
-    const R = world.parkRect, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, hx = (R.x1 - R.x0) / 2 - 24, hz = (R.z1 - R.z0) / 2 - 22, start = peds.length / 14;
-    for (let k = 0; k < 190; k++) { const off = rr(-1.4, 1.4); addPed(cx, cz, hx + off, hz + off, rnd() < 0.25 ? rr(2.8, 3.6) * (rnd() < 0.5 ? -1 : 1) : walkSpeed()); }
-    for (const [ox, oz, rx, rz] of [[cx + 60, R.z0 + (R.z1 - R.z0) * 0.45, 80, 40], [cx + 40, R.z0 + (R.z1 - R.z0) * 0.1, 64, 26]])
-      for (let k = 0; k < 50; k++) { const a = rnd() * 6.283, d = Math.sqrt(rnd()); addPed(ox + Math.cos(a) * rx * d, oz + Math.sin(a) * rz * d, 0, 0, 0); }
-    blocks.push({ cx, cz, ex: hx + 4, ez: hz + 4, start, count: peds.length / 14 - start });
+  { // the park: walkers and joggers on every path, people standing about on the grass and round the fountain
+    const R = world.parkRect, xa = R.x0 + 24, xb = R.x1 - 24, zs = [R.z0 + 22, ...R.hz, R.z1 - 22];
+    const rings = [[xa, xb, zs[0], zs[zs.length - 1], 170]];
+    for (let k = 0; k + 1 < zs.length; k++) rings.push([xa, xb, zs[k], zs[k + 1], 85]);
+    for (const [x0, x1, z0, z1, n] of rings) {
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2, hz = (z1 - z0) / 2, start = peds.length / 14;
+      for (let k = 0; k < n; k++) { const off = rr(-1.3, 1.3); addPed(cx, cz, hx + off, hz + off, rnd() < 0.22 ? rr(2.8, 3.7) * (rnd() < 0.5 ? -1 : 1) : walkSpeed()); }
+      blocks.push({ cx, cz, ex: hx + 3, ez: hz + 3, start, count: n });
+    }
+    const wet = (x, z) => R.water.some(([ox, oz, rx, rz]) => ((x - ox) / rx) ** 2 + ((z - oz) / rz) ** 2 < 1);
+    for (let q = 0; q < 4; q++) { // loose groups, by quarter so they stream with the view
+      const z0 = R.z0 + ((R.z1 - R.z0) * q) / 4, z1 = R.z0 + ((R.z1 - R.z0) * (q + 1)) / 4, start = peds.length / 14;
+      for (let g = 0; g < 34; g++) {
+        const gx = rr(R.x0 + 6, R.x1 - 6), gz = rr(z0 + 4, z1 - 4), m = 1 + ((rnd() * 4) | 0);
+        for (let k = 0; k < m; k++) { const x = gx + rr(-1.6, 1.6), z = gz + rr(-1.6, 1.6); if (!wet(x, z)) addPed(x, z, 0, 0, 0); }
+      }
+      if (R.fountain[1] >= z0 && R.fountain[1] < z1) for (let k = 0; k < 26; k++) { const a = rnd() * 6.283, d = rr(6.6, 12); addPed(R.fountain[0] + Math.cos(a) * d, R.fountain[1] + Math.sin(a) * d, 0, 0, 0); }
+      blocks.push({ cx: (R.x0 + R.x1) / 2, cz: (z0 + z1) / 2, ex: (R.x1 - R.x0) / 2, ez: (z1 - z0) / 2, start, count: peds.length / 14 - start });
+    }
   }
   const PD = new Float32Array(peds), NPED = peds.length / 14;
-  const PEDCAP = 2000, pedI = instanced(bodyPed(), PEDCAP, 3);
+  const PEDCAP = 2800, pedI = instanced(bodyPed(), PEDCAP, 3);
   { const m = new THREE.Mesh(pedI.g, pedMat); m.frustumCulled = false; m.receiveShadow = true; m.matrixAutoUpdate = false; scene.add(m); }
 
   // ------------------------------------------------------------ birds
@@ -322,11 +335,34 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
       sh.vertexShader = 'attribute float aPh; uniform float uT; varying float vT;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
   float st = fract(uT * 0.11 + aPh); vT = st;
   vec3 transformed = vec3(position);
-  transformed.y += st * st * 11.0 + st * 2.0; transformed.x += sin(uT * 0.6 + aPh * 31.0) * st * 1.6; transformed.z += cos(uT * 0.5 + aPh * 17.0) * st * 1.2;`).replace('gl_PointSize = size;', 'gl_PointSize = size * (0.35 + st * 1.5);');
+  transformed.y += st * st * 11.0 + st * 2.0; transformed.x += sin(uT * 0.6 + aPh * 31.0) * st * 1.6; transformed.z += cos(uT * 0.5 + aPh * 17.0) * st * 1.2;`).replace('gl_PointSize = size;', 'gl_PointSize = size * (0.35 + st * 1.5);').replace('#include <fog_vertex>', 'gl_PointSize = min(gl_PointSize, 260.0);\n#include <fog_vertex>');
       sh.fragmentShader = 'varying float vT;\n' + sh.fragmentShader.replace('#include <map_particle_fragment>', '#include <map_particle_fragment>\n  diffuseColor.a *= sin(vT * 3.14159);');
     };
     steam = new THREE.Points(sg, sm); steam.frustumCulled = false; scene.add(steam);
   }
+
+  // ------------------------------------------------------------ drifting motes: dust in the light by day, fireflies in the park at night
+  const MN = 380, mpos = new Float32Array(MN * 3), mseed = new Float32Array(MN);
+  for (let k = 0; k < MN; k++) { mpos[k * 3] = rnd(); mpos[k * 3 + 1] = rnd(); mpos[k * 3 + 2] = rnd(); mseed[k] = rnd(); }
+  const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(mpos, 3)); mg.setAttribute('aS', new THREE.BufferAttribute(mseed, 1));
+  const MU = { uCam: { value: new THREE.Vector3() }, uT: PU.uT, uBox: { value: new THREE.Vector3(56, 30, 56) }, uCol: { value: new THREE.Color(1, 0.85, 0.6) }, uA: { value: 0.2 }, uPx: { value: 60 }, uBlink: { value: 0 } };
+  const motes = new THREE.Points(mg, new THREE.ShaderMaterial({
+    uniforms: MU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `uniform vec3 uCam; uniform vec3 uBox; uniform float uT; uniform float uPx; uniform float uBlink; attribute float aS; varying float vA;
+      void main() {
+        vec3 w = position * uBox + vec3(sin(uT * 0.21 + aS * 40.0) * 1.5 + uT * 0.35, sin(uT * 0.33 + aS * 71.0) * 0.8, cos(uT * 0.17 + aS * 23.0) * 1.5);
+        vec3 rel = mod(w - uCam + uBox * 0.5, uBox) - uBox * 0.5;
+        vec4 mv = viewMatrix * vec4(uCam + rel, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = clamp(uPx * (0.6 + aS) / -mv.z, 1.0, 7.0);
+        float edge = 1.0 - smoothstep(0.36, 0.5, max(abs(rel.x) / uBox.x, abs(rel.z) / uBox.z));
+        float bl = mix(1.0, pow(0.5 + 0.5 * sin(uT * (1.5 + aS * 2.0) + aS * 90.0), 6.0), uBlink);
+        vA = edge * bl * smoothstep(1.0, 4.0, -mv.z);
+      }`,
+    fragmentShader: `uniform vec3 uCol; uniform float uA; varying float vA; void main() { float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(uCol, uA * vA * smoothstep(0.5, 0.1, d)); }`,
+  }));
+  motes.frustumCulled = false; motes.renderOrder = 3; scene.add(motes);
+  let nightK = 0;
 
   // ------------------------------------------------------------ streaming: choose which instances to draw
   const Q = { near: 150, far: 800, peds: 1200, pedR: 230 };
@@ -395,7 +431,10 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   }
 
   let timer = 0, lastYaw = 0, lastX = 0, lastZ = 0, flip = 0;
-  function update(dt, time, cx, cy, cz, yaw) {
+  function update(dt, time, cx, cy, cz, yaw, park) {
+    MU.uCam.value.set(cx, cy, cz);
+    if (nightK > 0.5) { motes.visible = !!park && cy < 60; MU.uCol.value.setRGB(0.8, 1.0, 0.3); MU.uA.value = 0.95; MU.uBlink.value = 1; MU.uPx.value = 90; }
+    else { motes.visible = true; MU.uCol.value.setRGB(1, 0.86, 0.62); MU.uA.value = park ? 0.3 : 0.2; MU.uBlink.value = 0; MU.uPx.value = 55; }
     CU.uTc.value = time % CYC; CU.uN.value = Math.floor(time / CYC); PU.uT.value = time;
     timer -= dt;
     let dy = yaw - lastYaw; dy = Math.abs(Math.atan2(Math.sin(dy), Math.cos(dy)));
@@ -420,7 +459,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   }
   const clampY = (y) => (y < 45 ? 45 : y > 320 ? 320 : y);
   function setQuality(q) { Object.assign(Q, q); timer = -1; }
-  function setNight(k) { CU.uHead.value = 0.18 + k * 1.5; CU.uTail.value = 0.8 + k * 0.9; birds.visible = k < 0.5; if (steam) steam.material.opacity = 0.3 - k * 0.12; }
+  function setNight(k) { nightK = k; CU.uHead.value = 0.18 + k * 1.5; CU.uTail.value = 0.8 + k * 0.9; birds.visible = k < 0.5; if (steam) steam.material.opacity = 0.3 - k * 0.12; }
   function refresh() { timer = -1; }
   return { update, setQuality, setNight, refresh, carAt, info, stats: { cars: NC, peds: NPED } };
 }
