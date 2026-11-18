@@ -157,7 +157,8 @@ export function buildLife(scene, world) {
   // ------------------------------------------------------------ materials
   const CU = { uTc: { value: 0 }, uN: { value: 0 }, uHead: { value: 0.2 }, uTail: { value: 0.8 } };
   const carMat = (far) => {
-    const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // close-up cars get glossy paint that picks up the sky; distant ones stay cheap
+    const m = far ? new THREE.MeshLambertMaterial({ vertexColors: true }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.34, metalness: 0.55 });
     if (far) m.defines = { FARCAR: 1 };
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, CU);

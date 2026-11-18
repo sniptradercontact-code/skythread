@@ -61,7 +61,7 @@ const capSky = (m) => { m.fragmentShader = m.fragmentShader.replace('gl_FragColo
 capSky(sky.material);
 const envScene = new THREE.Scene(); const envSky = new Sky(); envSky.scale.setScalar(50); envScene.add(envSky); envSky.material.fragmentShader = envSky.material.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( min( texColor, vec3( 1.9 ) ), 1.0 );');
 const pmrem = new THREE.PMREMGenerator(renderer);
-let envRT = null;
+let envRT = null, envDirty = 0;
 const sun = new THREE.DirectionalLight(0xffffff, 3);
 sun.castShadow = true; sun.shadow.mapSize.set(1536, 1536); sun.shadow.autoUpdate = false;
 const SHR = 120;
@@ -72,9 +72,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.72, fog: 0xd9a983, fogD: 0.0004, exp: 0.43, win: 0.5, env: 0.42, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.78, fog: 0xa9bcd0, fogD: 0.00028, exp: 0.42, win: 0.05, env: 0.32, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00042, exp: 0.82, win: 1.35, env: 0.9, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.0004, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00028, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00042, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -104,16 +104,15 @@ function applyTOD(i) {
   scene.fog = new THREE.FogExp2(t.fog, t.fogD);
   renderer.toneMappingExposure = t.exp;
   const night = t.night > 0.5;
-  for (const m of world.facadeMats) m.emissiveIntensity = t.win;
-  world.shopMat.emissiveIntensity = night ? 2.1 : Math.max(t.win, 0.35);
+  world.setWindows(t.win, t.lit, t.shop);
   world.setStreetLight(t.light, t.neon);
   for (const m of world.streetMats) m.emissiveIntensity = night ? 0.55 : 0;
-  world.lampMat.emissiveIntensity = night ? 3.0 : t.win > 0.3 ? 2.0 : 0.3;
+  world.lampMat.emissiveIntensity = night ? 3.0 : t.light > 0.1 ? 2.0 : 0.3;
   world.glowMat.color.setScalar(night ? 1.6 : 1.2);
   world.nightMat.color.setScalar(night ? 0.62 : 0.4);
-  world.setNight(night || t.win > 0.3);
+  world.setNight(night || t.light > 0.1);
   world.cloudMat.color.set(t.cloudCol); world.cloudMat.emissiveIntensity = t.cloudE;
-  world.waterMat.color.set(night ? 0x0b1a2e : t.win > 0.3 ? 0x3a6078 : 0x2c6787);
+  world.waterMat.color.set(night ? 0x0b1a2e : t.light > 0.1 ? 0x3a6078 : 0x2c6787);
   for (const m of world.bbMats) m.emissiveIntensity = t.bb;
   life.setNight(t.night);
   scene.environmentIntensity = t.env;
@@ -121,6 +120,7 @@ function applyTOD(i) {
   sky.visible = !night; scene.background = night ? nightSky : null;
   envRT = night ? pmrem.fromEquirectangular(nightSky) : pmrem.fromScene(envScene, 0, 0.1, 200);
   scene.environment = envRT.texture;
+  envDirty = 5;   // a few frames from now, capture the city itself for reflections
   sun.shadow.needsUpdate = true;
   applyPost();
   const el = document.getElementById('tod'); if (el) el.textContent = t.name.toUpperCase();
@@ -238,7 +238,7 @@ const P = {
   anchor: new V3(), pivot: new V3(), swingDir: new V3(), anchorN: new V3(), ropeLen: 0, ropeT: 0, hand: 'R',
   wallN: new V3(), wallMove: new V3(0, 1, 0), hitN: new V3(), wallHit: false, impact: 0,
   zip: null, facing: new V3(0, 0, 1), timeInAir: 0, swingArmed: false, swingCd: 0, wallCd: 0,
-  landT: 0, rollT: 0, skimT: 0, launchT: 0, squash: 0, idleT: 0, perch: 0, lean: 0, fy: 0,
+  landT: 0, rollT: 0, skimT: 0, launchT: 0, relT: 0, squash: 0, idleT: 0, perch: 0, lean: 0, fy: 0,
   rpos: new V3(), trick: null, combo: 0, style: 0, runPh: 0, aimW: 0, aimW2: 0, baseQ: new THREE.Quaternion(), offset: new V3(), inp: new V3(), best: 0,
 };
 const tv = new V3(), tv2 = new V3(), tv3 = new V3(), tv4 = new V3(), tq = new THREE.Quaternion(), tq2 = new THREE.Quaternion(), tm = new THREE.Matrix4();
@@ -249,7 +249,7 @@ const keys = {};
 const ev = { jump: false, swing: false, zip: false, trick: null };
 let mouse0 = false, locked = false, everLocked = false, started = false, lastMouse = 0, dragging = false;
 // the camera eases toward yawT/pitchT; position never changes where it points
-const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0 };
+const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0, cine: 1 };
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -261,8 +261,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyE') ev.trick = 'e';
   if (e.code === 'KeyR') ev.trick = 'r';
   if (e.code === 'KeyT') applyTOD((todIdx + 1) % TOD.length);
-  if (e.code === 'KeyX') { respawn(false); P.style = 0; P.combo = 0; flash('RESTARTED'); }
-  if (e.code === 'KeyM') toggleMute();
+  if (e.code === 'KeyX' && started) { if (TR.phase === 'count' || TR.phase === 'run') startTrial(TR.k); else { endTrial(); respawn(false); P.style = 0; P.combo = 0; flash('RESTARTED'); } }
+  if (e.code === 'KeyN') toggleMute();
+  if (e.code === 'KeyM') { if (mapOpen) closeMap(); else openMap(); }
+  if (e.code === 'Escape' && mapOpen) closeMap();
+  if (mapOpen && /^Digit[1-4]$/.test(e.code)) startTrial(+e.code[5] - 1);
   if (e.code === 'KeyG') { perf.manual = true; applyQuality((qIdx + QUALITY.length - 1) % QUALITY.length, 1, true); }
   if (e.code === 'KeyH') document.getElementById('help').classList.toggle('hide');
 });
@@ -300,12 +303,12 @@ document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
   if (locked) everLocked = true;
   C.mAvg = 4;
-  document.getElementById('pause').classList.toggle('show', started && everLocked && !locked);
+  document.getElementById('pause').classList.toggle('show', started && everLocked && !locked && !mapOpen);
 });
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('help').classList.remove('hide');
   setTimeout(() => document.getElementById('help').classList.add('hide'), 30000);
-  started = true; document.body.classList.add('playing'); document.getElementById('start').classList.add('gone'); if (!QS.has('noaudio')) initAudio(); if (!QS.has('nolock')) tryLock();
+  started = true; document.body.classList.add('playing'); document.getElementById('start').classList.add('gone'); if (!QS.has('noaudio')) initAudio(); if (!QS.has('nolock')) tryLock(); introLeap();
 });
 document.getElementById('pause').addEventListener('click', () => tryLock());
 function camFwdH(out) { return out.set(Math.sin(C.yaw), 0, Math.cos(C.yaw)); }
@@ -425,7 +428,7 @@ function tryAttach() {
   return true;
 }
 function release(auto) {
-  P.state = 'air'; P.timeInAir = 0; P.swingArmed = false; P.swingCd = 0.22;
+  P.state = 'air'; P.timeInAir = 0; P.swingArmed = false; P.swingCd = 0.22; P.relT = 0.8;
   const v = P.vel;
   if (v.y > -6 && v.y < 14) v.y += 3.5;
   const hs = Math.hypot(v.x, v.z);
@@ -527,7 +530,7 @@ function step(dt) {
   const inp = moveInput(P.inp);
   const shift = shiftDown();
   const swingHeld = swingDown();
-  P.swingCd -= dt; P.wallCd -= dt; P.timeInAir += dt; P.landT -= dt; P.rollT -= dt; P.skimT -= dt; P.launchT -= dt;
+  P.swingCd -= dt; P.wallCd -= dt; P.timeInAir += dt; P.landT -= dt; P.rollT -= dt; P.skimT -= dt; P.launchT -= dt; P.relT -= dt;
   const jumpEv = ev.jump, swingEv = ev.swing, zipEv = ev.zip;
   ev.jump = ev.swing = ev.zip = false;
   if (swingEv && (P.state === 'air')) P.swingArmed = true;
@@ -691,22 +694,14 @@ function postCollide(inp, jumpEv) {
 
 function resetCam() { C.yawT = C.yaw; C.pitchT = C.pitch; C.target.copy(P.pos); C.target.y += 0.55; C.occl = C.dist; C.hold = 0; C.roll = 0; }
 let spawnPos = new V3(), spawnYaw = 0;
-function chooseSpawn() {
-  let best = null, bs = 1e9;
-  for (const b of boxes) {
-    if (b.slab || b.minY > 1 || b.maxY < 84 || b.maxY > 135 || b.maxX - b.minX < 15 || b.maxZ - b.minZ < 15) continue;
-    const cx = (b.minX + b.maxX) / 2, cz = b.maxZ - 5;
-    const s = Math.hypot(cx - world.spawn.x, cz - world.spawn.z);
-    if (s >= bs) continue;
-    let clear = true; // nothing may be standing on this roof where we land
-    for (const c of boxes) if (c !== b && c.minY >= b.maxY - 0.5 && c.minY < b.maxY + 30 && c.minX < cx + 2 && c.maxX > cx - 2 && c.minZ < cz + 2 && c.maxZ > cz - 2) { clear = false; break; }
-    if (clear) { bs = s; best = b; }
-  }
-  const b = best || boxes.find((q) => !q.slab);
-  spawnPos.set((b.minX + b.maxX) / 2, b.maxY + HY + 0.05, b.maxZ - 5);   // near the uptown edge of the roof
-  spawnYaw = 0; // face uptown, toward the tallest towers
+function chooseSpawn() { // the city is built with one clean rooftop ledge that looks straight up at Midtown
+  const r = world.spawnRoof;
+  spawnPos.set(r.x, r.y + HY + 0.05, r.z - 5);
+  spawnYaw = 0;
+  intro.edge = r.z;
 }
 function respawn(msg) {
+  if (msg && TR.phase === 'run') { startTrial(TR.k); return; }   // fell in the river mid-trial: straight back to its start line
   P.pos.copy(spawnPos); P.prev.copy(spawnPos); P.rpos.copy(spawnPos); P.vel.set(0, 0, 0); P.state = 'air'; P.trick = null; P.combo = 0; P.zip = null;
   P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 2;
   C.yaw = spawnYaw; C.pitch = -0.12; resetCam();
@@ -743,13 +738,14 @@ function updateAnim(dt, time) {
       S('hipL', -1.75, 0, 0.25); S('knL', 2.35, 0, 0); S('hipR', -0.35, 0, -0.25); S('knR', 2.2, 0, 0); S('ftR', 0.9, 0, 0);
       S('shL', -0.1, 0, 1.25); S('elL', -0.2, 0, 0); S('shR', -1.15, 0, -0.2); S('elR', -0.15, 0, 0); rate = 22;
     } else if (hs > 0.8) {
-      const sprint = clamp((hs - 12) / 14, 0, 1);
-      P.runPh += dt * (4 + hs * 0.5);
+      const sprint = clamp((hs - 12) / 14, 0, 1), walk = 1 - clamp((hs - 2.4) / 3.5, 0, 1);
+      P.runPh += dt * lerp(4 + hs * 0.5, hs * 3.1, walk);
       const ph = P.runPh, s = Math.sin(ph), c = Math.cos(ph), A = clamp(hs / 9, 0.35, 1.15);
-      S('spine', 0.1 + 0.26 * sprint, 0.1 * s * A, 0); S('chest', 0.04 + 0.1 * sprint, -0.22 * s * A, 0); S('head', -0.1 - 0.3 * sprint, 0.1 * s * A, 0);
+      const eb = lerp(-0.7 - 0.6 * A, -0.3, walk);
+      S('spine', 0.1 - 0.07 * walk + 0.26 * sprint, 0.1 * s * A, 0); S('chest', 0.04 + 0.1 * sprint, -0.22 * s * A, 0); S('head', -0.1 - 0.3 * sprint, 0.1 * s * A, 0);
       S('shL', 0.95 * s * A, 0, 0.14 + 0.08 * sprint); S('shR', -0.95 * s * A, 0, -0.14 - 0.08 * sprint);
-      S('elL', -0.7 - 0.6 * A + 0.35 * s * A, 0, 0); S('elR', -0.7 - 0.6 * A - 0.35 * s * A, 0, 0);
-      S('hipL', -0.22 - 1.0 * s * A - 0.12 * sprint, 0, 0.04); S('hipR', -0.22 + 1.0 * s * A - 0.12 * sprint, 0, -0.04);
+      S('elL', eb + 0.35 * s * A, 0, 0); S('elR', eb - 0.35 * s * A, 0, 0);
+      S('hipL', -0.22 + 0.14 * walk - 1.0 * s * A - 0.12 * sprint, 0, 0.04); S('hipR', -0.22 + 0.14 * walk + 1.0 * s * A - 0.12 * sprint, 0, -0.04);
       S('knL', 0.25 + 1.5 * A * Math.max(0, c), 0, 0); S('knR', 0.25 + 1.5 * A * Math.max(0, -c), 0, 0);
       S('ftL', 0.5 * Math.max(0, -s) * A, 0, 0); S('ftR', 0.5 * Math.max(0, s) * A, 0, 0);   // push off the toes
       tgt.hipsY = -0.05 - 0.07 * Math.abs(c) * A; rate = 18; look = 0.35;
@@ -774,11 +770,14 @@ function updateAnim(dt, time) {
   } else if (st === 'swing') { // legs trail on the way down, sweep through the bottom, tuck on the way up
     const len = P.rpos.distanceTo(P.pivot) || 1;
     const fo = clamp(((P.rpos.x - P.pivot.x) * P.swingDir.x + (P.rpos.z - P.pivot.z) * P.swingDir.z) / len, -1, 1), t = (fo + 1) / 2;
-    const hipx = lerp(0.4, -1.45, smooth(t)), knx = t < 0.5 ? lerp(0.75, 0.2, t * 2) : lerp(0.2, 1.9, (t - 0.5) * 2);
-    S('spine', lerp(-0.28, 0.3, t), 0, 0); S('chest', lerp(-0.15, 0.12, t), 0, 0); S('head', lerp(0.1, -0.35, t), 0, 0);
-    S('hipL', hipx - 0.18, 0, 0.1); S('knL', knx + 0.25, 0, 0); S('hipR', hipx + 0.2, 0, -0.1); S('knR', knx, 0, 0); sym('ft', 0.5, 0, 0);
-    if (P.hand === 'R') { aimR = 1; S('shL', 0.9 - t * 1.1, 0, 0.75); S('elL', -0.45, 0, 0); } else { aimL = 1; S('shR', 0.9 - t * 1.1, 0, -0.75); S('elR', -0.45, 0, 0); }
-    rate = 8;
+    // behind the anchor the legs trail; just past the bottom they whip all the way through, straight, and the body lies back
+    const k1 = smooth(clamp((t - 0.42) / 0.3, 0, 1)), tuck = smooth(clamp((t - 0.86) / 0.14, 0, 1));
+    const hipx = lerp(0.62, -1.55, k1), knx = lerp(1.0, 0.05, smooth(clamp((t - 0.3) / 0.3, 0, 1))) + tuck * 1.3;
+    S('spine', lerp(0.22, -0.4, k1) + tuck * 0.5, 0, 0); S('chest', lerp(0.1, -0.22, k1), 0, 0); S('head', lerp(-0.32, 0.18, k1), 0, 0);
+    S('hipL', hipx + 0.12 * (1 - k1), 0, 0.08); S('knL', knx + 0.22 * (1 - k1), 0, 0); S('hipR', hipx - 0.1, 0, -0.08); S('knR', knx, 0, 0); sym('ft', 0.6, 0, 0);
+    const fa = lerp(1.05, -0.55, k1);
+    if (P.hand === 'R') { aimR = 1; S('shL', fa, 0, 0.6); S('elL', -0.35, 0, 0); } else { aimL = 1; S('shR', fa, 0, -0.6); S('elR', -0.35, 0, 0); }
+    rate = 11;
   } else if (st === 'zip') {
     aimR = 1; aimL = 0.9; S('spine', -0.2, 0, 0); S('chest', -0.1, 0, 0); S('head', -0.35, 0, 0);
     S('hipL', 0.25, 0, 0.08); S('knL', 0.9, 0, 0); S('hipR', 0.45, 0, -0.08); S('knR', 0.35, 0, 0); sym('ft', 0.6, 0, 0); rate = 14;
@@ -805,6 +804,10 @@ function updateAnim(dt, time) {
     } else if (P.launchT > 0 && v.y > -6) { // thrown by the slingshot: streamlined, arms swept back
       sym('sh', 0.8, 0, 0.3); sym('el', -0.1, 0, 0); S('hipL', 0.1, 0, 0.05); S('knL', 0.12, 0, 0); S('hipR', -0.25, 0, -0.05); S('knR', 0.6, 0, 0);
       S('spine', -0.18, 0, 0); S('chest', -0.1, 0, 0); S('head', -0.45, 0, 0); sym('ft', 0.75, 0, 0); rate = 12;
+    } else if (P.relT > 0 && v.y > -5) { // just let go at the top of a swing: back arched, arms wide, one knee drawn up, hanging in the air
+      S('spine', -0.34, 0, 0); S('chest', -0.2, 0, 0); S('head', -0.28, 0, 0);
+      S('shL', 0.45, 0, 1.25); S('shR', 0.45, 0, -1.25); sym('el', -0.3, 0, 0);
+      S('hipL', 0.42, 0, 0.1); S('knL', 0.65, 0, 0); S('hipR', -0.55, 0, -0.1); S('knR', 1.35, 0, 0); rate = 9;
     } else if (v.y > 3 && P.timeInAir < 0.6) {
       S('hipL', -1.3, 0, 0.1); S('knL', 1.9, 0, 0); S('hipR', 0.15, 0, -0.1); S('knR', 0.7, 0, 0);
       S('shL', -0.5, 0, 0.6); S('shR', 0.4, 0, -0.5); sym('el', -0.8, 0, 0); S('spine', 0.15, 0, 0);
@@ -937,21 +940,22 @@ function updateCamera(dt, now, time) {
   }
   if (keys.ArrowLeft) C.yawT += 2.2 * dt; if (keys.ArrowRight) C.yawT -= 2.2 * dt;
   if (keys.ArrowUp) C.pitchT = clamp(C.pitchT + 1.5 * dt, -1.35, 0.8); if (keys.ArrowDown) C.pitchT = clamp(C.pitchT - 1.5 * dt, -1.35, 0.8);
-  const ks = dt > 0 ? damp(60, dt) : 1;
+  if (started) C.cine = Math.max(0, C.cine - dt * 0.8);   // the opening shot relaxes into the play camera
+  const ks = dt > 0 ? damp(lerp(60, 2.6, smooth(C.cine)), dt) : 1;
   C.yaw += (C.yawT - C.yaw) * ks; C.pitch += (C.pitchT - C.pitch) * ks;
 
   tv.copy(P.rpos); tv.y += 0.55 - P.perch * 0.4;
   C.target.lerp(tv, dt > 0 ? damp(st === 'zip' ? 30 : 20, dt) : 1);
-  const want = 3.3 + clamp(sp / 70, 0, 1) * 2.6 + (st === 'swing' ? 0.5 : 0) + (st === 'wall' ? 0.9 : 0) - P.perch * 0.4;
+  const want = 3.3 + smooth(C.cine) * 1.1 + clamp(sp / 70, 0, 1) * 2.6 + (st === 'swing' ? 0.5 : 0) + (st === 'wall' ? 0.9 : 0) - P.perch * 0.4;
   C.dist += (want - C.dist) * damp(2.5, dt);
   const cp = Math.cos(C.pitch), dx = Math.sin(C.yaw) * cp, dy = Math.sin(C.pitch), dz = Math.cos(C.yaw) * cp;
   camDir.set(dx, dy, dz);
   // over-the-shoulder pivot; the shoulder offset shrinks at speed and next to walls
   const rx = -Math.cos(C.yaw), rz = Math.sin(C.yaw);
-  let side = 0.5 - clamp(sp / 40, 0, 1) * 0.28;
+  let side = 0.5 + smooth(C.cine) * 0.7 - clamp(sp / 40, 0, 1) * 0.28;
   const sClear = rayDist(C.target, rx, 0, rz, side + 0.35) - 0.35; if (sClear < side) side = Math.max(0, sClear);
   C.side += (side - C.side) * damp(side < C.side ? 18 : 4, dt);
-  camPivot.copy(C.target); camPivot.x += rx * C.side; camPivot.z += rz * C.side; camPivot.y += 0.38;
+  camPivot.copy(C.target); camPivot.x += rx * C.side; camPivot.z += rz * C.side; camPivot.y += 0.38 - smooth(C.cine) * 0.7;
   // hard clearance: centre ray plus four around it (the corners of the lens)
   const reach = C.dist + 0.5;
   let free = rayDist(camPivot, -dx, -dy, -dz, reach);
@@ -985,7 +989,7 @@ function updateCamera(dt, now, time) {
   camera.lookAt(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
   camera.rotateZ(-C.roll + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
   if (sh > 0.001) camera.rotateX(ny * sh * 0.014);
-  const fov = 62 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3;
+  const fov = 62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3;
   C.fov += (fov - C.fov) * damp(3, dt);
   if (Math.abs(camera.fov - C.fov) > 0.01) { camera.fov = C.fov; camera.updateProjectionMatrix(); }
 }
@@ -1192,6 +1196,141 @@ function updateAudio(dt) {
   if (moving) { const n = Math.floor(P.runPh / Math.PI); if (n !== stepN) { stepN = n; footstep(P.state === 'wall' ? 0.14 : clamp(sp / 26, 0.2, 0.7) * 0.5, n & 1); } }
 }
 
+// ---------------------------------------------------------------- reflections: the skyline itself is captured into the environment map
+const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+const cubeCam = new THREE.CubeCamera(2, 9000, cubeRT);
+let cityEnv = null;
+function captureEnv() { // used only by the building facades; everything else keeps the clean sky
+  const hv = hero.visible, fd = scene.fog.density; hero.visible = false; scene.fog.density = fd * 2.5;
+  cubeCam.position.set(P.rpos.x, 240, P.rpos.z);
+  cubeCam.update(renderer, scene);
+  hero.visible = hv; scene.fog.density = fd;
+  const rt = pmrem.fromCubemap(cubeRT.texture);
+  if (cityEnv) cityEnv.dispose();
+  cityEnv = rt; world.facadeMat.envMap = rt.texture; world.facadeMat.envMapIntensity = TOD[todIdx].env * 1.5; world.facadeMat.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- city map (M) and time trials
+function topAt(x, z) { let y = world.groundAt(x, z) ? 0 : -3; query(x - 0.5, x + 0.5, z - 0.5, z + 0.5, qbuf); for (const b of qbuf) if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.maxY > y) y = b.maxY; return y; }
+const FOUNT = world.parkRect.fountain;
+const TRIALS = [
+  { name: 'UPTOWN EXPRESS', blurb: 'From the Village rooftops to the fountain in the park', start: null, goal: [FOUNT[0] + 9, 1.2, FOUNT[1]], r: 9, medals: [36, 46, 62] },
+  { name: 'THE CLIMB', blurb: 'From the avenue to the crown of the great Midtown tower', start: [84, -114], goal: [0, 374, -190], r: 12, medals: [30, 42, 62] },
+  { name: 'DOWNTOWN DIVE', blurb: 'Leap off the downtown giant and touch down in Battery Park', start: [7, -874], goal: [0, 1.2, -1178], r: 16, medals: [10, 14, 22] },
+  { name: 'RIVER TO RIVER', blurb: 'Straight across town, east shore to a west side pier', start: [-748, -152], goal: [880, 1.2, -53], r: 11, medals: [48, 60, 82] },
+];
+const TR = { k: -1, phase: 'idle', count: 0, t: 0, doneT: 0, goal: new V3(), best: {} };
+try { TR.best = JSON.parse(localStorage.getItem('skythread-best') || '{}') || {}; } catch (_) { TR.best = {}; }
+const beacon = new THREE.Group();
+{
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 520, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0xffb14a, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  beam.position.y = 255;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 8, 48).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd38a, fog: false }));
+  ring.name = 'ring'; beacon.add(beam, ring); beacon.visible = false; scene.add(beacon);
+}
+const hudTrial = document.getElementById('trialhud');
+let mapOpen = false;
+function startTrial(k) {
+  const T = TRIALS[k], sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z;
+  if (mapOpen) closeMap();
+  P.pos.set(sx, topAt(sx, sz) + HY + 0.05, sz); P.prev.copy(P.pos); P.rpos.copy(P.pos); P.vel.set(0, 0, 0);
+  P.state = 'ground'; P.trick = null; P.zip = null; P.combo = 0; P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 0;
+  const yaw = Math.atan2(T.goal[0] - sx, T.goal[2] - sz);
+  C.yaw = C.yawT = yaw; C.pitch = C.pitchT = -0.08; C.cine = 0; resetCam(); P.facing.set(Math.sin(yaw), 0, Math.cos(yaw)); P.fy = yaw;
+  life.refresh();
+  TR.k = k; TR.phase = 'count'; TR.count = 3.4; TR.t = 0; TR.goal.set(T.goal[0], T.goal[1], T.goal[2]);
+  beacon.position.copy(TR.goal); beacon.getObjectByName('ring').scale.setScalar(T.r); beacon.visible = true;
+  hudTrial.classList.add('on'); document.getElementById('tname').textContent = T.name; document.getElementById('ttime').textContent = '0.00';
+  flash(T.name);
+}
+function endTrial() { TR.phase = 'idle'; TR.k = -1; beacon.visible = false; hudTrial.classList.remove('on'); }
+function finishTrial() {
+  const T = TRIALS[TR.k], t = TR.t, m = T.medals, medal = t <= m[0] ? 'GOLD' : t <= m[1] ? 'SILVER' : t <= m[2] ? 'BRONZE' : 'FINISHED';
+  const old = TR.best[T.name], rec = !old || t < old;
+  if (rec) { TR.best[T.name] = +t.toFixed(2); try { localStorage.setItem('skythread-best', JSON.stringify(TR.best)); } catch (_) {} }
+  TR.phase = 'done'; TR.doneT = 6;
+  popTrick(medal + (rec && old ? ' · NEW BEST' : '')); flash(T.name + ' · ' + t.toFixed(2) + ' S');
+  P.style += medal === 'GOLD' ? 3000 : medal === 'SILVER' ? 1500 : medal === 'BRONZE' ? 700 : 200;
+  for (let q = 0; q < 4; q++) tone('sine', [660, 830, 990, 1320][q], [660, 830, 990, 1320][q], 0.16, 0.16, { delay: q * 0.09, send: 0.4 });
+}
+function updateTrial(dt) {
+  if (TR.phase === 'idle') return;
+  const T = TRIALS[TR.k], d = P.pos.distanceTo(TR.goal);
+  if (TR.phase === 'count') {
+    const a = Math.ceil(TR.count); TR.count -= dt; const b = Math.ceil(TR.count);
+    if (b !== a && a <= 3) { if (b > 0) { popTrick(String(b)); tone('sine', 660, 660, 0.1, 0.2, { send: 0.2 }); } else { popTrick('GO!'); tone('sine', 1320, 1320, 0.28, 0.25, { send: 0.3 }); TR.phase = 'run'; TR.t = 0; } }
+    else if (b !== a && a === 4) { popTrick('3'); tone('sine', 660, 660, 0.1, 0.2, { send: 0.2 }); }
+  } else if (TR.phase === 'run') {
+    TR.t += dt; document.getElementById('ttime').textContent = TR.t.toFixed(2);
+    if (d < T.r) finishTrial();
+  } else if ((TR.doneT -= dt) <= 0) { endTrial(); return; }
+  document.getElementById('tinfo').textContent = TR.phase === 'done' ? 'COMPLETE' : Math.round(d) + ' M TO GO  ·  GOLD ' + T.medals[0] + ' S';
+  beacon.getObjectByName('ring').position.y = 0.4 + Math.sin(time * 3) * 0.25;
+  beacon.children[0].material.opacity = 0.22 * clamp((d - 12) / 60, 0.15, 1);   // the beam thins out as you close in, so it never fills the view
+}
+function miniGoal(c, k, u) { // the active goal on the minimap, pinned to the rim when it is out of range
+  const lx = -(TR.goal.x - P.pos.x) * k, ly = -(TR.goal.z - P.pos.z) * k, cs = Math.cos(C.yaw), sn = Math.sin(C.yaw);
+  let rx = lx * cs - ly * sn, ry = lx * sn + ly * cs; const len = Math.hypot(rx, ry), max = c - 9 * u;
+  if (len > max) { rx *= max / len; ry *= max / len; }
+  mctx.fillStyle = '#ffb14a'; mctx.strokeStyle = '#0b1220'; mctx.lineWidth = 2 * u;
+  mctx.save(); mctx.translate(c + rx, c + ry); mctx.rotate(Math.PI / 4); mctx.beginPath(); mctx.rect(-5 * u, -5 * u, 10 * u, 10 * u); mctx.stroke(); mctx.fill(); mctx.restore();
+}
+const BM = { x0: -1170, x1: 1000 };
+function drawBigMap() {
+  const cv = document.getElementById('bigmap'), M = world.MAP, H = Math.min(innerHeight * 0.8, 860), sc = H / (M.z1 - M.z0), W = (BM.x1 - BM.x0) * sc, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const X = (x) => (BM.x1 - x) * sc, Z = (z) => (M.z1 - z) * sc;
+  g.drawImage(mapCv, (M.x1 - BM.x1) * MSC, 0, (BM.x1 - BM.x0) * MSC, mapCv.height, 0, 0, W, H);
+  g.font = '700 13px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  TRIALS.forEach((T, k) => {
+    const sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z;
+    g.strokeStyle = 'rgba(255,177,74,0.75)'; g.lineWidth = 2; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(X(sx), Z(sz)); g.lineTo(X(T.goal[0]), Z(T.goal[2])); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#ffb14a'; g.save(); g.translate(X(T.goal[0]), Z(T.goal[2])); g.rotate(Math.PI / 4); g.fillRect(-5, -5, 10, 10); g.restore();
+    g.fillStyle = '#2ef2ff'; g.beginPath(); g.arc(X(sx), Z(sz), 10, 0, TAU); g.fill(); g.fillStyle = '#06121a'; g.fillText(String(k + 1), X(sx), Z(sz) + 1);
+  });
+  g.save(); g.translate(X(P.pos.x), Z(P.pos.z)); g.rotate(-Math.atan2(P.facing.x, P.facing.z));
+  g.beginPath(); g.moveTo(0, -11); g.lineTo(8, 9); g.lineTo(0, 4); g.lineTo(-8, 9); g.closePath(); g.fillStyle = '#fff'; g.strokeStyle = '#0b1220'; g.lineWidth = 2.5; g.stroke(); g.fill(); g.restore();
+}
+function trialCards() {
+  document.getElementById('trials').innerHTML = TRIALS.map((T, k) => {
+    const b = TR.best[T.name], m = T.medals, medal = !b ? '' : b <= m[0] ? 'GOLD' : b <= m[1] ? 'SILVER' : b <= m[2] ? 'BRONZE' : '';
+    return `<div class="tcard" data-k="${k}"><div class="tn"><b>${k + 1}</b>${T.name}</div><div class="tb">${T.blurb}</div><div class="tm"><span>GOLD ${m[0]}s</span><span>SILVER ${m[1]}s</span><span>BRONZE ${m[2]}s</span></div><div class="tbest">${b ? 'BEST ' + b.toFixed(2) + ' S' + (medal ? ' · ' + medal : '') : 'NOT RUN YET'}</div></div>`;
+  }).join('') + (TR.phase !== 'idle' ? '<div class="tcard quit" data-k="-1"><div class="tn">LEAVE TRIAL</div><div class="tb">Back to free roaming</div></div>' : '');
+}
+function openMap() {
+  if (!started || mapOpen) return;
+  mapOpen = true; drawBigMap(); trialCards();
+  document.getElementById('mapview').classList.add('show'); document.getElementById('pause').classList.remove('show');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeMap() {
+  if (!mapOpen) return;
+  mapOpen = false; document.getElementById('mapview').classList.remove('show');
+  if (!QS.has('nolock')) tryLock();
+}
+document.getElementById('trials').addEventListener('click', (e) => {
+  const el = e.target.closest('.tcard'); if (!el) return;
+  const k = +el.dataset.k; if (k < 0) { endTrial(); closeMap(); } else startTrial(k);
+});
+document.getElementById('mapclose').addEventListener('click', () => closeMap());
+
+// ---------------------------------------------------------------- opening shot: the hero walks to the roof's edge and settles into a crouch
+const intro = { t: 0, on: true, edge: 0 };
+function introStep(dt) {
+  intro.t += dt;
+  const stop = intro.edge - 0.8; let sp = 0;
+  if (intro.t > 1.0 && P.pos.z < stop) { sp = Math.min(2.2, (stop - P.pos.z) * 2.2 + 0.3); P.pos.z = Math.min(stop, P.pos.z + sp * dt); }
+  P.vel.set(0, 0, sp); P.pos.y = spawnPos.y; P.prev.copy(P.pos); P.rpos.copy(P.pos); P.state = 'ground'; P.grounded = true;
+  const u = smooth(clamp(intro.t / 15, 0, 1));
+  C.yawT = C.yaw = 1.0 - 0.55 * u + Math.sin(intro.t * 0.13) * 0.04; C.pitchT = C.pitch = 0.13 - 0.1 * u; C.cine = 1;
+}
+function introLeap() { // the click: straight from the crouch into a running dive off the edge
+  intro.on = false;
+  P.pos.z = Math.max(P.pos.z, intro.edge - 2.5); P.state = 'air'; P.vel.set(0, 10.5, 15); P.timeInAir = 0; P.swingArmed = false; P.idleT = 0;
+  C.yawT = 0; C.pitchT = -0.2; whoosh(0.7);
+}
+
 // ---------------------------------------------------------------- HUD
 const $ = (id) => document.getElementById(id);
 const hud = { style: $('style'), combo: $('combo'), speed: $('speed'), alt: $('alt'), state: $('state'), reticle: $('reticle'), trick: $('trick'), flash: $('flash'), zone: $('zone'), street: $('street'), fps: $('fps'), gauge: $('gauge') };
@@ -1219,6 +1358,7 @@ function drawMini() {
   mctx.beginPath(); mctx.moveTo(0, -9 * u); mctx.lineTo(6.5 * u, 7 * u); mctx.lineTo(0, 3.5 * u); mctx.lineTo(-6.5 * u, 7 * u); mctx.closePath();
   mctx.fillStyle = '#fff'; mctx.strokeStyle = '#0b1220'; mctx.lineWidth = 2 * u; mctx.stroke(); mctx.fill();
   mctx.restore();
+  if (TR.phase !== 'idle') miniGoal(c, k, u);
   // north marker rides the rim
   const nx = c + Math.sin(C.yaw) * (c - 11 * u), ny = c - Math.cos(C.yaw) * (c - 11 * u);
   mctx.fillStyle = '#ffb14a'; mctx.font = `700 ${12 * u}px "Barlow Condensed", sans-serif`; mctx.textAlign = 'center'; mctx.textBaseline = 'middle'; mctx.fillText('N', nx, ny);
@@ -1272,10 +1412,12 @@ function reportOnce(e) { if (!reported) { reported = true; console.error('[skyth
 applyQuality(qIdx, 1);
 applyTOD(0);
 chooseSpawn(); respawn(false);
+P.pos.z = intro.edge - 11.5; P.pos.y = spawnPos.y; P.prev.copy(P.pos); P.rpos.copy(P.pos); P.state = 'ground'; C.yaw = C.yawT = 1.0; resetCam();
 document.addEventListener('visibilitychange', () => { skipHitch = true; });
 function frame(now) {
   requestAnimationFrame(frame);
 $('cta').textContent = 'CLICK TO START';
+$('fade').classList.add('out');
   if (dbgFreeze) { last = now; return; }
   const rawDt = (now - last) / 1000;
   const dt = Math.min(0.05, rawDt); last = now; frameNo++;
@@ -1283,17 +1425,19 @@ $('cta').textContent = 'CLICK TO START';
   else if (started && rawDt > 1.0 && qIdx < QUALITY.length - 1 && FORCE_Q < 0) {
     if (++hitches >= 2) { hitches = -999; perf.done = true; perf.climb = false; perf.ceil = LADDER.length - 1; setLevel(LADDER.length - 1); }
   }
-  const paused = !started || (everLocked && !locked);
+  const paused = !started || mapOpen || (everLocked && !locked);
   if (!paused) {
     time += dt; acc += dt;
     const h = 1 / 120; let n = 0;
+    if (TR.phase === 'count') { acc = 0; ev.jump = ev.swing = ev.zip = false; }   // held on the start line during the countdown
     while (acc >= h && n < 10) { step(h); acc -= h; n++; }
     if (n >= 10) acc = 0;
     P.rpos.copy(P.prev).lerp(P.pos, clamp(acc / h, 0, 1));
     if (ev.trick) { startTrick(ev.trick); ev.trick = null; }
-  } else { ev.trick = null; if (!started) { time += dt; C.yawT += dt * 0.04; } }
+    updateTrial(dt);
+  } else { ev.trick = null; if (!started) { time += dt; introStep(dt); } }
   if (!paused || !started) world.update(dt, time, camera.position.x, camera.position.z);
-  updateAnim(paused ? 0 : dt, time);
+  updateAnim(paused && started ? 0 : dt, time);
   updateCamera(dt, now, time);
   try { life.update(dt, time, camera.position.x, camera.position.y, camera.position.z, C.yaw, zoneNow === 'CENTRAL PARK' || zoneNow === 'BATTERY PARK'); } catch (e) { reportOnce(e); }
   if ((zipTick = (zipTick + 1) % 3) === 0) computeZip();
@@ -1302,6 +1446,8 @@ $('cta').textContent = 'CLICK TO START';
   try { updateAudio(paused ? 0 : dt); } catch (e) { reportOnce(e); }
   autoQuality(Math.min(rawDt, 1));   // real time, so slow frames are measured as slow
   const q = QUALITY[qIdx];
+  if (frameNo === 90) world.freeTextureData();
+  if (envDirty > 0 && --envDirty === 0 && qIdx <= 2) { try { captureEnv(); } catch (e) { reportOnce(e); } }
   if (dbgCam) { if (dbgCam.f) { camera.position.copy(P.rpos).add(dbgCam.p); camera.lookAt(P.rpos.x, P.rpos.y + dbgCam.t.y, P.rpos.z); } else { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); } }
   if (q.sh > 0 && frameNo % q.shEvery === 0) placeSun();
   if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn; dof.uniforms.uFocus.value = 130 + P.perch * 30; }
@@ -1321,4 +1467,4 @@ function audioDbg() {
   return { state: actx.state, rms: +Math.sqrt(s2 / d.length).toFixed(4), peak: +pk.toFixed(3), carVoices: AU.cars.map((v) => v.id), crowd: life.info.crowd };
 }
 function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
-window.__G = { P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
+window.__G = { introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };

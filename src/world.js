@@ -79,92 +79,118 @@ function brickPattern(c, S) {
   }
 }
 function piers(c, S, cs) { for (let x = 0; x < S; x += cs) { c.fillStyle = 'rgba(80,60,30,0.2)'; c.fillRect(x - 12, 0, 24, S); c.fillStyle = 'rgba(255,245,220,0.16)'; c.fillRect(x - 12, 0, 6, S); } }
-const WARM = ['#ffd9a0', '#fff1d6', '#ffcf85', '#ffe7c2'], COOL = ['#d8ecff', '#fff6e0', '#cfe3ff', '#ffe9c8'];
+// Every facade style is one layer of a texture array, so a whole district draws as a single mesh.
+// The colour layer holds the look; the second layer packs (R) self-glow, (G) roughness, (B) metalness.
+const RM = (rough, metal, glow = 0) => `rgb(${(glow * 255) | 0},${(rough * 255) | 0},${(metal * 255) | 0})`;
+function speckle(c, S) { for (let i = 0; i < 9000; i++) { c.fillStyle = `rgba(${rnd() < 0.5 ? '255,240,235' : '40,25,25'},${rr(0.04, 0.16)})`; c.fillRect(rnd() * S, rnd() * S, rr(1, 4), rr(1, 4)); } }
+function columns(c, S, cs) { for (let x = 0; x < S; x += cs) { c.fillStyle = 'rgba(255,250,235,0.22)'; c.fillRect(x - 7, 0, 14, S); c.fillStyle = 'rgba(40,30,20,0.3)'; c.fillRect(x + 7, 0, 3, S); } for (let y = 0; y < S; y += cs) { c.fillStyle = 'rgba(40,30,20,0.28)'; c.fillRect(0, y + cs - 12, S, 4); c.fillStyle = 'rgba(255,250,235,0.2)'; c.fillRect(0, y + cs - 8, S, 8); } }
 const STYLES = [
-  { name: 'glassBlue', glass: 1, wall: '#33404e', frame: '#3d4854', win: { l: 2, r: 2, t: 3, b: 9 }, gTop: '#a9cdea', gBot: '#44698c', gVar: 0.3, gRough: '#141414', wRough: '#8a8a8a', lit: 0.26, litCols: COOL, mullion: true, metal: 0.75 },
-  { name: 'glassTeal', glass: 1, wall: '#2b4444', frame: '#35504f', win: { l: 2, r: 2, t: 3, b: 8 }, gTop: '#a4e3d8', gBot: '#377878', gVar: 0.3, gRough: '#151515', wRough: '#8a8a8a', lit: 0.26, litCols: COOL, mullion: true, metal: 0.75 },
-  { name: 'glassDark', glass: 1, wall: '#15181c', frame: '#22272d', win: { l: 2, r: 2, t: 2, b: 6 }, gTop: '#4f6f80', gBot: '#17222a', gVar: 0.25, gRough: '#101010', wRough: '#666666', lit: 0.24, litCols: COOL, mullion: true, metal: 0.85 },
-  { name: 'bronze', glass: 1, wall: '#35271c', frame: '#4a3524', win: { l: 3, r: 3, t: 3, b: 8 }, gTop: '#dcb078', gBot: '#6d4a28', gVar: 0.25, gRough: '#161616', wRough: '#777777', lit: 0.26, litCols: WARM, mullion: true, metal: 0.8 },
-  { name: 'brickRed', wall: '#8f4a35', frame: '#e3dccb', win: { l: 17, r: 17, t: 12, b: 20 }, gTop: '#42566a', gBot: '#1b242c', gVar: 0.3, gRough: '#333333', wRough: '#f0f0f0', lit: 0.34, litCols: WARM, sill: '#d8d0bd', pattern: brickPattern, escapes: true, metal: 0 },
-  { name: 'brickBrown', wall: '#74553c', frame: '#2c2a28', win: { l: 16, r: 16, t: 11, b: 19 }, gTop: '#4a5e70', gBot: '#1c252d', gVar: 0.3, gRough: '#333333', wRough: '#f0f0f0', lit: 0.34, litCols: WARM, sill: '#5d4630', pattern: brickPattern, escapes: true, metal: 0 },
-  { name: 'limestone', wall: '#cfc1a0', win: { l: 20, r: 20, t: 8, b: 14 }, gTop: '#4c6074', gBot: '#1e2832', gVar: 0.3, gRough: '#2c2c2c', wRough: '#e6e6e6', lit: 0.3, litCols: WARM, sill: '#b9a57f', pattern: piers, metal: 0.02 },
-  { name: 'concrete', wall: '#c8c6bf', win: { l: 3, r: 3, t: 14, b: 18 }, gTop: '#667b8e', gBot: '#2a3743', gVar: 0.2, gRough: '#262626', wRough: '#dddddd', lit: 0.28, litCols: WARM, bands: '#a9a69c', bandH: 6, metal: 0.05 },
+  { name: 'glassBlue', glass: 1, wall: '#33404e', frame: '#3d4854', win: { l: 2, r: 2, t: 3, b: 9 }, gTop: '#a9cdea', gBot: '#44698c', gVar: 0.3, gRough: 0.05, wRough: 0.5, wMetal: 0.5, mullion: true },
+  { name: 'glassTeal', glass: 1, wall: '#2b4444', frame: '#35504f', win: { l: 2, r: 2, t: 3, b: 8 }, gTop: '#a4e3d8', gBot: '#377878', gVar: 0.3, gRough: 0.06, wRough: 0.5, wMetal: 0.5, mullion: true },
+  { name: 'glassDark', glass: 1, wall: '#15181c', frame: '#22272d', win: { l: 2, r: 2, t: 2, b: 6 }, gTop: '#4f6f80', gBot: '#17222a', gVar: 0.25, gRough: 0.04, wRough: 0.4, wMetal: 0.6, mullion: true },
+  { name: 'bronze', glass: 1, wall: '#35271c', frame: '#4a3524', win: { l: 3, r: 3, t: 3, b: 8 }, gTop: '#dcb078', gBot: '#6d4a28', gVar: 0.25, gRough: 0.07, wRough: 0.45, wMetal: 0.6, mullion: true },
+  { name: 'brickRed', wall: '#8f4a35', frame: '#e3dccb', win: { l: 17, r: 17, t: 12, b: 20 }, gTop: '#42566a', gBot: '#1b242c', gVar: 0.3, gRough: 0.12, wRough: 0.94, sill: '#d8d0bd', pattern: brickPattern, escapes: true },
+  { name: 'brickBrown', wall: '#74553c', frame: '#2c2a28', win: { l: 16, r: 16, t: 11, b: 19 }, gTop: '#4a5e70', gBot: '#1c252d', gVar: 0.3, gRough: 0.12, wRough: 0.94, sill: '#5d4630', pattern: brickPattern, escapes: true },
+  { name: 'limestone', wall: '#cfc1a0', win: { l: 20, r: 20, t: 8, b: 14 }, gTop: '#4c6074', gBot: '#1e2832', gVar: 0.3, gRough: 0.1, wRough: 0.9, sill: '#b9a57f', pattern: piers },
+  { name: 'concrete', wall: '#c8c6bf', win: { l: 3, r: 3, t: 14, b: 18 }, gTop: '#667b8e', gBot: '#2a3743', gVar: 0.2, gRough: 0.09, wRough: 0.86, bands: '#a9a69c', bandH: 6 },
+  { name: 'steelGrid', glass: 1, wall: '#1a1a1c', frame: '#2a2a2c', win: { l: 3, r: 3, t: 3, b: 15 }, spandrel: '#2b2420', gTop: '#8a7a66', gBot: '#3a322a', gVar: 0.2, gRough: 0.06, wRough: 0.42, wMetal: 0.7, mullion: true },
+  { name: 'marbleFin', wall: '#e4e2dc', win: { l: 21, r: 21, t: 0, b: 0 }, spandrel: '#39434d', spanH: 13, gTop: '#5d7388', gBot: '#2c3b49', gVar: 0.2, gRough: 0.06, wRough: 0.7 },
+  { name: 'terracotta', wall: '#b5653f', frame: '#e8d9bd', win: { l: 16, r: 16, t: 10, b: 18 }, arch: true, gTop: '#43566a', gBot: '#1a232b', gVar: 0.3, gRough: 0.12, wRough: 0.92, sill: '#e2d2b4', pattern: brickPattern },
+  { name: 'granite', wall: '#b39a93', frame: '#6d5a55', win: { l: 13, r: 13, t: 13, b: 13 }, gTop: '#39485a', gBot: '#141c24', gVar: 0.25, gRough: 0.08, wRough: 0.6, pattern: speckle },
+  { name: 'ribbon', wall: '#d9d6cd', win: { l: 0, r: 0, t: 11, b: 22 }, gTop: '#6fa08e', gBot: '#2f5a50', gVar: 0.15, gRough: 0.06, wRough: 0.8, mullion: true, thin: true },
+  { name: 'decoStack', wall: '#bfb39a', win: { l: 18, r: 18, t: 5, b: 16 }, spandrel: '#5a5446', spanFull: true, gTop: '#4d6072', gBot: '#1f2932', gVar: 0.25, gRough: 0.1, wRough: 0.88, pattern: piers },
+  { name: 'castIron', wall: '#d8cdb8', frame: '#3b3a38', win: { l: 7, r: 7, t: 8, b: 11 }, gTop: '#52677a', gBot: '#1f2a33', gVar: 0.3, gRough: 0.11, wRough: 0.8, pattern: columns, escapes: true },
+  { name: 'goldGlass', glass: 1, wall: '#4a3a1e', frame: '#6b5326', win: { l: 2, r: 2, t: 2, b: 7 }, gTop: '#f0c878', gBot: '#8a6226', gVar: 0.2, gRough: 0.05, wRough: 0.4, wMetal: 0.8, mullion: true },
 ];
+const SHOP_LAYER = STYLES.length;
 function makeFacade(o) {
   const S = 1024, C = 8, cs = S / C, K = 2;
-  const [cc, c] = mk(S, S), [rc, r] = mk(S / 2, S / 2), [ec, e] = mk(S / 2, S / 2), [nc, n] = mk(S / 2, S / 2);
-  r.scale(0.5, 0.5); e.scale(0.5, 0.5); n.scale(0.5, 0.5);
+  const [cc, c] = mk(S, S), [rc, r] = mk(S / 2, S / 2);
+  r.scale(0.5, 0.5);
   c.fillStyle = o.wall; c.fillRect(0, 0, S, S);
-  r.fillStyle = o.wRough; r.fillRect(0, 0, S, S);
-  e.fillStyle = '#000'; e.fillRect(0, 0, S, S);
-  n.fillStyle = '#8080ff'; n.fillRect(0, 0, S, S);
+  r.fillStyle = RM(o.wRough, o.wMetal || 0); r.fillRect(0, 0, S, S);
   if (o.pattern) o.pattern(c, S, cs);
+  const GLASS = RM(o.gRough, 0.78, 1), FRAME = RM(0.5, 0.35);   // red marks the panes
   for (let fy = 0; fy < C; fy++) for (let fx = 0; fx < C; fx++) {
     const x = fx * cs, y = fy * cs, w = o.win;
     const wx = x + w.l * K, wy = y + w.t * K, ww = cs - (w.l + w.r) * K, wh = cs - (w.t + w.b) * K;
-    if (o.frame) { c.fillStyle = o.frame; c.fillRect(wx - 4, wy - 4, ww + 8, wh + 8); r.fillStyle = '#777'; r.fillRect(wx - 4, wy - 4, ww + 8, wh + 8); }
-    const v = rr(-1, 1) * o.gVar;
-    const g = c.createLinearGradient(wx, wy, wx + ww * 0.3, wy + wh);
-    g.addColorStop(0, shade(o.gTop, v)); g.addColorStop(1, shade(o.gBot, v));
-    c.fillStyle = g; c.fillRect(wx, wy, ww, wh);
-    if (rnd() < 0.5) { c.save(); c.globalAlpha = rr(0.06, 0.16); c.fillStyle = '#eef4ff'; c.beginPath(); const sx = wx + ww * rr(-0.2, 0.5); c.moveTo(sx, wy + wh); c.lineTo(sx + ww * 0.45, wy); c.lineTo(sx + ww * 0.8, wy); c.lineTo(sx + ww * 0.35, wy + wh); c.fill(); c.restore(); }
-    if (!o.glass && rnd() < 0.34) { c.fillStyle = `rgba(${pick(['232,224,205', '205,212,220', '190,170,150'])},${rr(0.45, 0.8)})`; c.fillRect(wx, wy, ww, wh * rr(0.25, 0.7)); }   // blinds
-    r.fillStyle = o.gRough; r.fillRect(wx, wy, ww, wh);
-    if (o.mullion) { c.fillStyle = o.frame || o.wall; c.fillRect(wx + ww / 2 - 2, wy, 4, wh); }
-    else { c.fillStyle = o.frame || '#d9d2c2'; c.fillRect(wx, wy + wh * 0.48, ww, 3); }                                                       // sash bar
-    // window reveal in the normal map: the pane sits back from the wall
-    const d = 6; n.fillStyle = '#d880ff'; n.fillRect(wx - 1, wy, d, wh); n.fillStyle = '#2880ff'; n.fillRect(wx + ww - d + 1, wy, d, wh);
-    n.fillStyle = '#8028ff'; n.fillRect(wx, wy - 1, ww, d); n.fillStyle = '#80d8ff'; n.fillRect(wx, wy + wh - d + 1, ww, d);
-    if (rnd() < o.lit) {
-      e.globalAlpha = rr(0.4, 1); e.fillStyle = pick(o.litCols); e.fillRect(wx + 1, wy + 1, ww - 2, wh - 2); e.globalAlpha = 1;
-      if (rnd() < 0.4) { e.fillStyle = '#000'; e.fillRect(wx, wy, ww, wh * rr(0.2, 0.6)); }
+    if (o.spandrel) { // a metal panel fills the bay between one window and the next
+      c.fillStyle = shade(o.spandrel, rr(-0.3, 0.3)); const sh = (o.spanH || w.b) * K;
+      if (o.spanFull) c.fillRect(wx, y, ww, cs); else c.fillRect(wx, y + cs - sh, ww, sh);
+      r.fillStyle = RM(0.45, 0.6); if (o.spanFull) r.fillRect(wx, y, ww, cs); else r.fillRect(wx, y + cs - sh, ww, sh);
     }
-    if (o.sill) { c.fillStyle = o.sill; c.fillRect(wx - 8, wy + wh + 4, ww + 16, 8); c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(wx - 8, wy + wh + 12, ww + 16, 3); n.fillStyle = '#80d8ff'; n.fillRect(wx - 8, wy + wh + 4, ww + 16, 4); }
-    if (!o.glass && rnd() < 0.13) { const aw = ww * 0.5, ax = wx + ww * 0.25, ay = wy + wh - 20; c.fillStyle = '#a3a39e'; c.fillRect(ax, ay, aw, 22); c.fillStyle = '#6f6f6b'; for (let q = 3; q < 20; q += 5) c.fillRect(ax + 3, ay + q, aw - 6, 2); e.fillStyle = '#000'; e.fillRect(ax, ay, aw, 22); }   // window air conditioner
+    const gh = o.spandrel && !o.spanFull && o.spanH ? cs - o.spanH * K : wh;
+    if (o.frame) { c.fillStyle = o.frame; c.fillRect(wx - 4, wy - 4, ww + 8, gh + 8); r.fillStyle = FRAME; r.fillRect(wx - 4, wy - 4, ww + 8, gh + 8); }
+    const pane = (g) => { g.beginPath(); if (o.arch) { g.moveTo(wx, wy + gh); g.lineTo(wx, wy + ww / 2); g.arc(wx + ww / 2, wy + ww / 2, ww / 2, Math.PI, 0); g.lineTo(wx + ww, wy + gh); g.closePath(); } else g.rect(wx, wy, ww, gh); };
+    if (o.arch) { c.fillStyle = o.wall; c.fillRect(wx - 4, wy - 4, ww + 8, ww / 2 + 4); c.strokeStyle = o.frame; c.lineWidth = 6; pane(c); c.stroke(); }
+    const v = rr(-1, 1) * o.gVar, g = c.createLinearGradient(wx, wy, wx + ww * 0.3, wy + gh);
+    g.addColorStop(0, shade(o.gTop, v)); g.addColorStop(1, shade(o.gBot, v));
+    c.save(); pane(c); c.clip();
+    c.fillStyle = g; c.fillRect(wx, wy, ww, gh);
+    if (rnd() < 0.5) { c.globalAlpha = rr(0.06, 0.16); c.fillStyle = '#eef4ff'; c.beginPath(); const sx = wx + ww * rr(-0.2, 0.5); c.moveTo(sx, wy + gh); c.lineTo(sx + ww * 0.45, wy); c.lineTo(sx + ww * 0.8, wy); c.lineTo(sx + ww * 0.35, wy + gh); c.fill(); c.globalAlpha = 1; }
+    if (!o.glass && rnd() < 0.36) { c.fillStyle = `rgba(${pick(['232,224,205', '205,212,220', '190,170,150'])},${rr(0.45, 0.8)})`; c.fillRect(wx, wy, ww, gh * rr(0.25, 0.7)); }   // blinds
+    c.fillStyle = 'rgba(0,0,0,0.4)'; c.fillRect(wx, wy, ww, 6); c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(wx, wy, 5, gh);   // the pane sits back in shadow
+    c.fillStyle = 'rgba(255,255,255,0.1)'; c.fillRect(wx + ww - 3, wy, 3, gh);
+    c.restore();
+    r.fillStyle = GLASS; pane(r); r.fill();
+    if (o.mullion) { c.fillStyle = o.frame || o.wall; c.fillRect(wx + ww / 2 - (o.thin ? 1.5 : 2), wy, o.thin ? 3 : 4, gh); if (o.thin) c.fillRect(wx, wy, 3, gh); }
+    else if (!o.spandrel) { c.fillStyle = o.frame || '#d9d2c2'; c.fillRect(wx, wy + gh * 0.48, ww, 3); if (o.name === 'castIron') c.fillRect(wx + ww / 2 - 1.5, wy, 3, gh); }
+    if (o.sill) { c.fillStyle = o.sill; c.fillRect(wx - 8, wy + gh + 4, ww + 16, 8); c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(wx - 8, wy + gh + 12, ww + 16, 4); c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(wx - 8, wy + gh + 4, ww + 16, 2); }
+    if (!o.glass && !o.spandrel && rnd() < 0.13) { const aw = ww * 0.5, ax = wx + ww * 0.25, ay = wy + gh - 20; c.fillStyle = '#a3a39e'; c.fillRect(ax, ay, aw, 22); c.fillStyle = '#6f6f6b'; for (let q = 3; q < 20; q += 5) c.fillRect(ax + 3, ay + q, aw - 6, 2); r.fillStyle = RM(0.7, 0.3); r.fillRect(ax, ay, aw, 22); }   // window air conditioner
   }
-  if (o.bands) { c.fillStyle = o.bands; for (let fy = 0; fy < C; fy++) c.fillRect(0, fy * cs + cs - o.bandH * K, S, o.bandH * K); }
+  if (o.bands) { c.fillStyle = o.bands; for (let fy = 0; fy < C; fy++) { c.fillRect(0, fy * cs + cs - o.bandH * K, S, o.bandH * K); c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(0, fy * cs + cs, S, 3); c.fillStyle = o.bands; } }
   if (o.escapes) for (const fx of [2, 6]) { // iron fire escapes zig-zagging down one bay
     const x = fx * cs;
     for (let fy = 0; fy < C; fy++) {
       const y = fy * cs + cs - 30;
-      c.fillStyle = '#17181a'; c.fillRect(x + 6, y, cs - 12, 6); e.fillStyle = '#000'; e.fillRect(x + 6, y - 26, cs - 12, 32);
+      c.fillStyle = 'rgba(0,0,0,0.28)'; c.fillRect(x + 12, y + 6, cs - 12, 10);
+      c.fillStyle = '#17181a'; c.fillRect(x + 6, y, cs - 12, 6);
       c.fillRect(x + 6, y - 26, cs - 12, 3); for (let q = 8; q < cs - 8; q += 12) c.fillRect(x + q, y - 26, 2, 26);
       c.strokeStyle = '#17181a'; c.lineWidth = 4; c.beginPath(); c.moveTo(x + (fy % 2 ? 14 : cs - 14), y + 6); c.lineTo(x + (fy % 2 ? cs - 30 : 30), y + cs); c.stroke();
-      n.fillStyle = '#80d8ff'; n.fillRect(x + 6, y - 2, cs - 12, 4);
     }
   }
+  // weathering: faint streaks running down from the sills
+  for (let i = 0; i < (o.glass ? 0 : 70); i++) { c.fillStyle = `rgba(20,15,10,${rr(0.03, 0.09)})`; c.fillRect(rnd() * S, rnd() * S, rr(2, 7), rr(30, 140)); }
   grain(c, S, S, 8);
-  return { map: tex(cc), rough: tex(rc, false), emi: tex(ec), nrm: tex(nc, false) };
+  return [cc, rc];
 }
-// ground-floor storefronts: 4 shop units across (8 m each), 5 m tall
+// ground-floor storefronts: four rows of four different shop units (8 m wide, 5 m tall)
 function makeShops() {
-  const W = 1024, H = 256, [cc, c] = mk(W, H), [ec, e] = mk(W / 2, H / 2);
-  e.scale(0.5, 0.5);
-  c.fillStyle = '#2b2a2a'; c.fillRect(0, 0, W, H); e.fillStyle = '#000'; e.fillRect(0, 0, W, H);
-  const signs = ['#c8372f', '#2f6fb0', '#e0a422', '#2f8a57', '#7a3fa0', '#d86a1f', '#1f8f93', '#b0b0b0'];
-  for (let u = 0; u < 4; u++) {
-    const x = u * 256, sc = pick(signs);
-    c.fillStyle = pick(['#3a3836', '#4a4038', '#33373b', '#5a5248']); c.fillRect(x, 0, 256, H);
-    c.fillStyle = sc; c.fillRect(x + 12, 12, 232, 48);                                // sign band
-    c.fillStyle = 'rgba(255,255,255,0.8)'; const n = 2 + ((rnd() * 4) | 0);           // abstract lettering blocks
-    for (let k = 0; k < n; k++) c.fillRect(x + 32 + k * (184 / n), 26, (184 / n) * 0.7, 20);
-    e.fillStyle = sc; e.globalAlpha = 0.55; e.fillRect(x + 12, 12, 232, 48); e.globalAlpha = 1;
-    c.fillStyle = shade(sc, -1.2); c.fillRect(x + 8, 64, 240, 16);                    // awning
-    c.fillStyle = 'rgba(255,255,255,0.18)'; for (let q = 8; q < 248; q += 24) c.fillRect(x + q, 64, 12, 16);
-    const g = c.createLinearGradient(0, 84, 0, 236); g.addColorStop(0, '#8fb0c8'); g.addColorStop(1, '#31485a');
-    c.fillStyle = g; c.fillRect(x + 16, 88, 140, 136);                                // display window
-    c.fillStyle = 'rgba(30,25,20,0.55)'; for (let q = 0; q < 4; q++) c.fillRect(x + 26 + q * 32, 150 + rr(0, 30), 22, 74);   // goods on display
-    e.fillStyle = pick(WARM); e.globalAlpha = rr(0.5, 0.95); e.fillRect(x + 16, 88, 140, 136); e.globalAlpha = 1;
-    c.fillStyle = '#1b1a19'; c.fillRect(x + 84, 88, 4, 136);
-    c.fillStyle = '#24211e'; c.fillRect(x + 172, 108, 64, 148);                       // door
-    c.fillStyle = g; c.fillRect(x + 180, 116, 48, 80);
-    e.fillStyle = '#ffe2b0'; e.globalAlpha = 0.45; e.fillRect(x + 180, 116, 48, 80); e.globalAlpha = 1;
-    c.fillStyle = '#c9b458'; c.fillRect(x + 220, 200, 6, 16);
-    c.fillStyle = '#1e1d1c'; c.fillRect(x, 236, 256, 20);                             // kick plate
-    c.fillStyle = '#222'; c.fillRect(x, 0, 4, H);
+  const S = 1024, [cc, c] = mk(S, S), [rc, r] = mk(S / 2, S / 2);
+  r.scale(0.5, 0.5);
+  c.fillStyle = '#2b2a2a'; c.fillRect(0, 0, S, S); r.fillStyle = RM(0.8, 0); r.fillRect(0, 0, S, S);
+  const signs = ['#c8372f', '#2f6fb0', '#e0a422', '#2f8a57', '#7a3fa0', '#d86a1f', '#1f8f93', '#b0b0b0', '#d84a7a', '#3a3a3a', '#e8e2d0', '#8a5a2b'];
+  for (let row = 0; row < 4; row++) for (let u = 0; u < 4; u++) {
+    const x = u * 256, y = row * 256, sc = pick(signs), dark = rnd() < 0.3;
+    c.fillStyle = pick(['#3a3836', '#4a4038', '#33373b', '#5a5248', '#6b5a48', '#2a2e33']); c.fillRect(x, y, 256, 256);
+    c.fillStyle = sc; c.fillRect(x + 12, y + 12, 232, 48); r.fillStyle = RM(0.6, 0, 0.55); r.fillRect(x + 12, y + 12, 232, 48);   // sign band
+    c.fillStyle = dark ? 'rgba(20,20,20,0.85)' : 'rgba(255,255,255,0.85)'; const n = 2 + ((rnd() * 4) | 0);
+    for (let k = 0; k < n; k++) c.fillRect(x + 32 + k * (184 / n), y + 26, (184 / n) * 0.7, 20);                                    // abstract lettering
+    c.fillStyle = shade(sc, -1.2); c.fillRect(x + 8, y + 64, 240, 16);                                                                // awning
+    c.fillStyle = 'rgba(255,255,255,0.18)'; for (let q = 8; q < 248; q += 24) c.fillRect(x + q, y + 64, 12, 16);
+    c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x + 8, y + 80, 240, 8);
+    const wide = rnd() < 0.5, dx = wide ? 16 : 100, dw = wide ? 140 : 140, ddx = wide ? 172 : 20;
+    const g = c.createLinearGradient(0, y + 84, 0, y + 236); g.addColorStop(0, '#d9c9a4'); g.addColorStop(1, '#7c6a4c');
+    c.fillStyle = g; c.fillRect(x + dx, y + 88, dw, 136); r.fillStyle = RM(0.15, 0.1, 0.85); r.fillRect(x + dx, y + 88, dw, 136);     // lit display window
+    c.fillStyle = 'rgba(30,25,20,0.6)'; for (let q = 0; q < 4; q++) c.fillRect(x + dx + 10 + q * 32, y + 150 + rr(0, 30), 22, 74);    // goods on display
+    c.fillStyle = 'rgba(255,255,255,0.14)'; c.beginPath(); c.moveTo(x + dx, y + 224); c.lineTo(x + dx + 50, y + 88); c.lineTo(x + dx + 80, y + 88); c.lineTo(x + dx + 30, y + 224); c.fill();
+    c.fillStyle = '#1b1a19'; c.fillRect(x + dx + dw / 2 - 2, y + 88, 4, 136); c.fillRect(x + dx - 3, y + 85, dw + 6, 4); c.fillRect(x + dx - 3, y + 222, dw + 6, 4);
+    c.fillStyle = '#24211e'; c.fillRect(x + ddx, y + 108, 64, 148);                                                                   // door
+    c.fillStyle = g; c.fillRect(x + ddx + 8, y + 116, 48, 84); r.fillStyle = RM(0.15, 0.1, 0.5); r.fillRect(x + ddx + 8, y + 116, 48, 84);
+    c.fillStyle = '#c9b458'; c.fillRect(x + ddx + 48, y + 204, 6, 16);
+    c.fillStyle = '#1e1d1c'; c.fillRect(x, y + 236, 256, 20); c.fillStyle = '#222'; c.fillRect(x, y, 4, 256);
   }
-  grain(c, W, H, 8);
-  return { map: tex(cc), emi: tex(ec) };
+  grain(c, S, S, 8);
+  return [cc, rc];
+}
+// pack canvases into the layers of an array texture (rows flipped so v runs upward, as with ordinary textures)
+function arrayTex(canvases, srgb) {
+  const W = canvases[0].width, H = canvases[0].height, N = canvases.length, data = new Uint8Array(W * H * 4 * N);
+  canvases.forEach((cv, k) => { const src = cv.getContext('2d').getImageData(0, 0, W, H).data, base = k * W * H * 4; for (let y = 0; y < H; y++) data.set(src.subarray(y * W * 4, (y + 1) * W * 4), base + (H - 1 - y) * W * 4); });
+  const t = new THREE.DataArrayTexture(data, W, H, N);
+  t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = ANISO; t.needsUpdate = true;
+  return t;
 }
 function makeWalkTex() {
   const S = 256, [cv, c] = mk(S, S);
@@ -211,12 +237,13 @@ export function makeWebTex() {
 const WHITE = [1, 1, 1];
 export const C3 = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
 export class GB {
-  constructor() { this.p = []; this.n = []; this.u = []; this.c = []; this.i = []; }
+  constructor(layered = false) { this.p = []; this.n = []; this.u = []; this.c = []; this.i = []; this.l = []; this.layer = 0; this.layered = layered; }
   quad(a, b, c, d, n, ua, ub, uc, ud, col = WHITE) {
     const k = this.p.length / 3;
     this.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
     for (let j = 0; j < 4; j++) { this.n.push(n[0], n[1], n[2]); this.c.push(col[0], col[1], col[2]); }
     this.u.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1], ud[0], ud[1]);
+    if (this.layered) this.l.push(this.layer, this.layer, this.layer, this.layer);
     this.i.push(k, k + 1, k + 2, k, k + 2, k + 3);
   }
   tri(a, b, c, col = WHITE) {
@@ -224,13 +251,13 @@ export class GB {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
     this.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-    for (let j = 0; j < 3; j++) { this.n.push(nx, ny, nz); this.c.push(col[0], col[1], col[2]); this.u.push(0, 0); }
+    for (let j = 0; j < 3; j++) { this.n.push(nx, ny, nz); this.c.push(col[0], col[1], col[2]); this.u.push(0, 0); if (this.layered) this.l.push(this.layer); }
     this.i.push(k, k + 1, k + 2);
   }
   wall(ax, az, bx, bz, y0, y1, tile, uoff, col, vfix) {
     const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
     const n = [-dz / len, 0, dx / len];
-    const u0 = uoff / tile, u1 = (uoff + len) / tile, v0 = vfix ? 0 : y0 / tile, v1 = vfix ? 1 : y1 / tile;
+    const u0 = uoff / tile, u1 = (uoff + len) / tile, v0 = vfix ? (vfix.length ? vfix[0] : 0) : y0 / tile, v1 = vfix ? (vfix.length ? vfix[1] : 1) : y1 / tile;
     this.quad([ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az], n, [u0, v0], [u1, v0], [u1, v1], [u0, v1], col);
   }
   walls(x0, x1, z0, z1, y0, y1, tile, col, vfix) {
@@ -259,6 +286,7 @@ export class GB {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.u, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    if (this.layered) g.setAttribute('aLayer', new THREE.Float32BufferAttribute(this.l, 1));
     g.setIndex(this.i); g.computeBoundingSphere(); return g;
   }
 }
@@ -295,10 +323,35 @@ export function query(minX, maxX, minZ, maxZ, out) {
 // ============================================================================
 export function buildWorld(scene, renderer) {
   ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  const facadeTex = STYLES.map(makeFacade);
-  const facadeMats = STYLES.map((s, i) => { const t = facadeTex[i]; return new THREE.MeshStandardMaterial({ map: t.map, roughnessMap: t.rough, roughness: 1, metalness: s.metal, emissiveMap: t.emi, emissive: 0xffffff, emissiveIntensity: 0.5, normalMap: t.nrm, normalScale: new THREE.Vector2(0.9, 0.9), vertexColors: true }); });
-  const shopT = makeShops();
-  const shopMat = new THREE.MeshStandardMaterial({ map: shopT.map, emissiveMap: shopT.emi, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.75, vertexColors: true });
+  const layers = STYLES.map(makeFacade); layers.push(makeShops());
+  const facadeU = { tAlb: { value: arrayTex(layers.map((l) => l[0]), true) }, tRM: { value: arrayTex(layers.map((l) => l[1]), false) }, uWin: { value: 0.3 }, uLit: { value: 0.25 }, uShop: { value: 0.4 } };
+  // one material for every facade: the style is a texture-array layer chosen per vertex, glass is a tinted
+  // mirror of the sky and skyline, and which windows are lit is decided per window, so no two walls match
+  const facadeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, emissive: 0xffffff });
+  facadeMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, facadeU);
+    sh.vertexShader = 'attribute float aLayer; varying vec2 vUvF; varying float vLayer;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vUvF = uv; vLayer = aLayer;');
+    sh.fragmentShader = `uniform sampler2DArray tAlb; uniform sampler2DArray tRM; uniform float uWin; uniform float uLit; uniform float uShop; varying vec2 vUvF; varying float vLayer;
+float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+` + sh.fragmentShader.replace('#include <map_fragment>', `
+  float fl = floor(vLayer + 0.5);
+  vec4 fAlb = texture(tAlb, vec3(vUvF, fl));
+  vec4 fRM = texture(tRM, vec3(vUvF, fl));
+  vec2 fcell = floor(vUvF * 8.0);
+  float fh = fhash(fcell), fh2 = fhash(fcell + 71.7);
+  float fshop = step(${SHOP_LAYER}.0 - 0.5, fl);
+  float fglass = fRM.r * (1.0 - fshop);
+  diffuseColor *= fAlb;
+  diffuseColor.rgb *= mix(1.0, 0.84 + 0.3 * fh2, fglass);`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * fRM.g;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = metalness * fRM.b;')
+      .replace('#include <emissivemap_fragment>', `
+  float fband = step(0.93, fhash(vec2(fcell.y * 3.1, floor(fcell.x / 14.0))));
+  float fon = max(step(1.0 - uLit, fh), fband);
+  vec3 fwarm = mix(vec3(1.0, 0.76, 0.48), vec3(0.78, 0.9, 1.0), step(0.7, fh2));
+  totalEmissiveRadiance = fwarm * (fon * fglass * uWin * (0.5 + 1.2 * fAlb.g)) + fAlb.rgb * (fRM.r * fshop * uShop);`);
+  };
+  facadeMat.customProgramCacheKey = () => 'skyFacade';
   const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const walkMat = new THREE.MeshLambertMaterial({ map: makeWalkTex(), vertexColors: true });
   const groundMat = new THREE.MeshLambertMaterial({ map: makeGroundTex() });
@@ -308,21 +361,24 @@ export function buildWorld(scene, renderer) {
   // chunk buckets: everything static is grouped by district-sized chunks for frustum culling
   const buckets = {};
   let B = null;
-  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: STYLES.map(() => new GB()), shop: new GB(), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), geos: [], trees: [], lamps: [] }));
+  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: new GB(true), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), geos: [], trees: [], lamps: [] }));
   const cellB = (i, j) => useB('c' + Math.floor(clampN(i, 0, NA - 1) / 3) + '_' + Math.floor(clampN(j, 0, NS - 1) / 4));
+  const spawnRoof = { x: 0, y: 0, z: 0 };
   const bbSpots = [], map = { b: [], slabs: [], feats: [], lands: [], lines: [] };
   const vents = [];
   const sigB = { ag: new GB(), ar: new GB(), sg: new GB(), sr: new GB() };
   const K = {
     trim: C3(0xc9c2b4), stone: C3(0xb9a98a), metal: C3(0x8d9296), dark: C3(0x24272b), steel: C3(0x6f8296), grass: C3(0x4f7a36), lawn: C3(0x6a9744),
     path: C3(0xc9b68c), water: C3(0x2a5a78), quay: C3(0x8f8c86), land: C3(0x4c5148), wood: C3(0x6b4a2f), signal: C3(0xd9a516), pier: C3(0x7b6a55),
-    red: C3(0xb3261e), green: C3(0x1f4d33), blue: C3(0x1f3f7a), scaf: C3(0x245a3c), glass: C3(0x8fb3c7), door: C3(0x3a2c22),
+    copper: C3(0x5f9a86), red: C3(0xb3261e), green: C3(0x1f4d33), blue: C3(0x1f3f7a), scaf: C3(0x245a3c), glass: C3(0x8fb3c7), door: C3(0x3a2c22),
   };
   const SPILL = [[1, 0.8, 0.52], [1, 0.9, 0.7], [0.85, 0.93, 1], [1, 0.68, 0.45], [1, 0.86, 0.6]];
   const NEON = [[2.2, 0.25, 0.5], [0.2, 1.8, 2.2], [2.2, 1.5, 0.2], [0.4, 2.1, 0.6], [2.0, 0.5, 2.2], [2.2, 0.7, 0.15], [2.2, 2.0, 1.6], [0.35, 0.7, 2.3]];
   const ROOFS = [C3(0x5d5c5a), C3(0x6b6862), C3(0x4c4b4a), C3(0x75695a), C3(0x8a8880), C3(0x57604f), C3(0x3f3e3d)];
   const CROWN = [[2.2, 1.9, 1.3], [0.5, 1.8, 2.2], [2.2, 0.5, 1.6], [0.5, 2.0, 0.8], [2.2, 1.3, 0.3], [1.9, 1.9, 2.2]];
-  const tintOf = (st) => { const b = st < 4 ? rr(0.8, 1.15) : rr(0.78, 1.12), j = st < 4 ? 0.1 : 0.06; return [b * (1 + rr(-j, j)), b * (1 + rr(-j, j)), b * (1 + rr(-j, j))]; };
+  const HUES = [[1, 0.94, 0.86], [0.88, 0.84, 0.82], [1.04, 1, 0.92], [0.82, 0.72, 0.64], [0.96, 0.98, 1.02], [1.05, 0.9, 0.82], [0.9, 0.95, 0.88], [1.0, 0.86, 0.74]];
+  const tintOf = (st) => { if (STYLES[st].glass) { const b = rr(0.8, 1.15), q = 0.1; return [b * (1 + rr(-q, q)), b * (1 + rr(-q, q)), b * (1 + rr(-q, q))]; } const hc = pick(HUES), b = rr(0.74, 1.14); return [hc[0] * b, hc[1] * b, hc[2] * b]; };
+  let curTile = TILE;
   const box3 = (w, h, d, x, y, z, col) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); B.geos.push(paint(g, col)); };
   const cone = (x, z, y, r0, r1, h, seg, col) => { const g = new THREE.CylinderGeometry(r1, r0, h, seg, 1); g.translate(x, y + h / 2, z); B.geos.push(paint(g, col)); };
   const beacon = (x, y, z) => B.night.box(x - 0.6, x + 0.6, y, y + 1.1, z - 0.6, z + 0.6, [2.6, 0.12, 0.08]);
@@ -331,8 +387,11 @@ export function buildWorld(scene, renderer) {
   // one building tier: windowed walls, optional ground-floor shops, capped flat roof
   function tier(st, x0, x1, z0, z1, y0, y1, tint, shop, cap, roofCol) {
     const yw = shop ? SHOP_H : y0;
-    if (y1 > yw) B.fb[st].walls(x0, x1, z0, z1, yw, y1, TILE, tint);
-    if (shop) B.shop.walls(x0, x1, z0, z1, 0, SHOP_H, 32, WHITE, true);
+    if (y1 > yw) { B.fb.layer = st; B.fb.walls(x0, x1, z0, z1, yw, y1, curTile, tint); }
+    if (shop) { // a row of shopfronts, and on masonry buildings a stone belt course above them
+      const row = (rnd() * 4) | 0; B.fb.layer = SHOP_LAYER; B.fb.walls(x0, x1, z0, z1, 0, SHOP_H, 32, WHITE, [1 - (row + 1) / 4, 1 - row / 4]);
+      if (!STYLES[st].glass) B.flat.walls(x0 - 0.22, x1 + 0.22, z0 - 0.22, z1 + 0.22, SHOP_H - 0.1, SHOP_H + 0.45, 8, K.trim);
+    }
     if (cap) { const e = 0.45; B.flat.walls(x0 - e, x1 + e, z0 - e, z1 + e, y1 - 1.3, y1, 8, K.trim); B.flat.top(x0 - e, x1 + e, z0 - e, z1 + e, y1, 8, roofCol); }
     else B.flat.top(x0, x1, z0, z1, y1, 8, roofCol);
     addBox(x0, x1, y0, y1, z0, z1);
@@ -354,7 +413,7 @@ export function buildWorld(scene, renderer) {
   }
   const R4 = (v) => Math.max(12, Math.round(v / 4) * 4);
   function tower(kind, st, x0, x1, z0, z1, h, tint) {
-    const roofCol = pick(ROOFS); h = R4(h);
+    const roofCol = pick(ROOFS); h = R4(h); curTile = TILE * pick([0.86, 1, 1, 1, 1.18]);
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
     const crown = h > 150 && rnd() < 0.32 ? pick(CROWN) : null;
     if (kind === 'box' || h < 50) { tier(st, x0, x1, z0, z1, 0, h, tint, true, true, roofCol); roofStuff(x0, x1, z0, z1, h, h); if (crown) band(x0, x1, z0, z1, h - 4, h - 1.4, crown); return; }
@@ -395,7 +454,7 @@ export function buildWorld(scene, renderer) {
 
   // ---------------------------------------------------------------- landmarks (period archetypes, not replicas)
   function landmark(i, j, ax0, ax1, az0, az1) {
-    const cx = (ax0 + ax1) / 2, cz = (az0 + az1) / 2, rc = ROOFS[0], GOLD = [2.4, 1.8, 0.9];
+    const cx = (ax0 + ax1) / 2, cz = (az0 + az1) / 2, rc = ROOFS[0], GOLD = [2.4, 1.8, 0.9]; curTile = TILE;
     if (i === 4 && j === 13) { // art-deco setback giant with a mast
       const t = [0.98, 0.95, 0.88];
       const T = [[45, 0, 0, 28], [31, 4, 28, 96], [24, 7, 96, 264], [19, 11, 264, 304], [13, 15, 304, 336]];
@@ -440,14 +499,14 @@ export function buildWorld(scene, renderer) {
     return rnd() < 0.15 ? rr(60, 112) : rr(22, 58);
   }
   function styleFor(h, zn) {
-    if (h > 150) return pick([0, 0, 1, 2, 2, 3, 6]);
-    if (h > 60) return pick([0, 2, 3, 6, 6, 7, 7, 4, 5, 1]);
-    if (zn === 'village' || zn === 'uptown') return pick([4, 4, 5, 5, 6, 7]);
-    return pick([4, 5, 6, 6, 7, 7]);
+    if (h > 150) return pick([0, 0, 1, 2, 2, 3, 6, 8, 8, 12, 13, 15, 9]);
+    if (h > 60) return pick([0, 2, 3, 6, 6, 7, 7, 4, 5, 1, 8, 9, 11, 12, 13, 10]);
+    if (zn === 'village' || zn === 'uptown') return pick([4, 4, 5, 5, 6, 7, 10, 10, 14, 14, 11]);
+    return pick([4, 5, 6, 6, 7, 7, 10, 11, 14, 13]);
   }
   function fill(xa, xb, za, zb, zn, i, j, hMin = 0, hMax = 0, pencil = false) {
     const low = zn === 'village' || zn === 'uptown', big = zn === 'midtown' || zn === 'fidi';
-    const wmin = low ? 11 : big ? 22 : 16, wmax = low ? 20 : big ? 46 : 30;
+    const wmin = low ? 11 : big ? 26 : 17, wmax = low ? 21 : big ? 60 : 34;
     let x = xa; const out = []; let pen = pencil ? 1 + ((rnd() * 2) | 0) : 0;
     while (x < xb - 9) {
       let w = rr(wmin, wmax); if (xb - (x + w) < wmin * 0.8) w = xb - x;
@@ -459,13 +518,71 @@ export function buildWorld(scene, renderer) {
         else if (h > 262) kind = pick(['taper', 'setback', 'deco', 'pencil', 'setback']);
         else if (h > 110) kind = pick(['box', 'setback', 'setback', 'deco']);
         else kind = h > 50 && rnd() < 0.4 ? 'setback' : 'box';
-        const st = kind === 'pencil' ? pick([0, 1, 2, 3]) : kind === 'deco' ? pick([6, 6, 4, 7]) : kind === 'taper' ? pick([0, 1, 2]) : styleFor(h, zn);
+        const st = kind === 'pencil' ? pick([0, 1, 2, 3, 15, 8]) : kind === 'deco' ? pick([6, 13, 6, 4, 11]) : kind === 'taper' ? pick([0, 1, 2, 15]) : styleFor(h, zn);
         tower(kind, st, x, x1, z0, z1, h, tintOf(st));
         out.push({ x0: x, x1, z0, z1, h: R4(h) });
       }
       x = x1 + 0.6;
     }
     return out;
+  }
+  // pilasters running up a facade give the big buildings a structural grid
+  function fins(x0, x1, z0, z1, y0, y1, step, col) {
+    const F = B.flat, d = 0.55, w = 0.45;
+    for (let x = x0 + step / 2; x < x1 - 1; x += step) { F.walls(x - w, x + w, z0 - d, z0, y0, y1, 8, col); F.walls(x - w, x + w, z1, z1 + d, y0, y1, 8, col); }
+    for (let z = z0 + step / 2; z < z1 - 1; z += step) { F.walls(x0 - d, x0, z - w, z + w, y0, y1, 8, col); F.walls(x1, x1 + d, z - w, z + w, y0, y1, 8, col); }
+  }
+  const megaPick = (zn) => {
+    const r = rnd();
+    if (zn === 'midtown' || zn === 'fidi') return r < 0.34 ? pick(['slab', 'cake', 'twin', 'cake', 'slab', 'court']) : r < 0.37 ? 'hall' : null;
+    if (zn === 'uws' || zn === 'ues') return r < 0.3 ? pick(['court', 'court', 'slab']) : r < 0.33 ? 'hall' : null;
+    return r < 0.14 ? 'court' : r < 0.17 ? 'hall' : null;
+  };
+  // buildings that take a whole city block (140 x 50 m): the scale that makes a person feel small
+  function mega(kind, x0, x1, z0, z1) {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, rc = pick(ROOFS), glass = [0, 1, 2, 3, 8, 12, 15], stone = [6, 13, 11, 7, 9];
+    curTile = TILE;
+    const garden = (xa, xb, za, zb, y, n) => { if (xb - xa > 6) for (let k = 0; k < n; k++) B.trees.push([rr(xa + 2, xb - 2), y, rr(za + 2, zb - 2), rr(0.6, 0.9), 0]); };
+    if (kind === 'slab') { // a podium filling the block with one broad slab tower on top
+      const ps = pick(stone), st = pick(glass), ph = R4(rr(24, 40)), h = R4(rr(180, 310)), hw = rr(46, 60), hd = rr(15, 21);
+      tier(ps, x0, x1, z0, z1, 0, ph, tintOf(ps), true, true, rc);
+      tier(st, cx - hw, cx + hw, cz - hd, cz + hd, ph, h, tintOf(st), false, true, rc);
+      fins(cx - hw, cx + hw, cz - hd, cz + hd, ph, h - 1.4, 8, STYLES[st].glass ? K.dark : K.trim);
+      roofStuff(cx - hw, cx + hw, cz - hd, cz + hd, h, h); garden(x0, cx - hw, z0, z1, ph, 5); garden(cx + hw, x1, z0, z1, ph, 5);
+      band(cx - hw, cx + hw, cz - hd, cz + hd, h - 4.5, h - 1.4, pick(CROWN));
+    } else if (kind === 'cake') { // a 1920s giant stepping back tier by tier
+      const st = pick([6, 13, 6, 4, 11, 13]), t = tintOf(st), h = R4(rr(210, 340)), fr = [0.2, 0.4, 0.58, 0.76, 1];
+      let a0 = x0, a1 = x1, b0 = z0, b1 = z1, y = 0;
+      for (let k = 0; k < 5; k++) {
+        const y1 = R4(h * fr[k]);
+        if (k) { const sx = rr(7, 10), sz = rr(3.5, 5.5); a0 += sx; a1 -= sx; if (b1 - b0 - 2 * sz > 16) { b0 += sz; b1 -= sz; } }
+        tier(st, a0, a1, b0, b1, y, y1, t, k === 0, true, rc); if (k) fins(a0, a1, b0, b1, y, y1 - 1.4, 7, K.stone);
+        if (k >= 3) band(a0, a1, b0, b1, y1 - 3.4, y1 - 1.4, CROWN[0]);
+        y = y1;
+      }
+      const s = Math.min(a1 - a0, b1 - b0) * 0.3;
+      B.flat.box(cx - s, cx + s, y, y + 12, cz - s, cz + s, K.stone); addBox(cx - s, cx + s, y, y + 12, cz - s, cz + s);
+      B.flat.pyr(cx - s, cx + s, cz - s, cz + s, y + 12, s * 2.4, K.copper); cone(cx, cz, y + 12 + s * 2.2, 0.8, 0.1, 26, 4, K.metal); beacon(cx, y + 38 + s * 2.2, cz);
+    } else if (kind === 'twin') { // two glass towers sharing a podium
+      const ps = pick(stone), st = pick(glass), t = tintOf(st), ph = R4(rr(20, 34)), hw = rr(20, 24), off = rr(34, 40);
+      tier(ps, x0, x1, z0, z1, 0, ph, tintOf(ps), true, true, rc);
+      for (const sd of [-1, 1]) { const h = R4(rr(220, 340)), tx = cx + sd * off; tier(st, tx - hw, tx + hw, cz - hw, cz + hw, ph, h, t, false, true, rc); fins(tx - hw, tx + hw, cz - hw, cz + hw, ph, h - 1.4, 7.3, K.dark); band(tx - hw, tx + hw, cz - hw, cz + hw, h - 4.5, h - 1.4, pick(CROWN)); beacon(tx, h, cz); }
+      garden(cx - off + hw, cx + off - hw, z0, z1, ph, 6);
+    } else if (kind === 'court') { // a pre-war block: tall wings around open light courts
+      const st = pick([4, 5, 6, 10, 14, 11, 10]), t = tintOf(st), h = R4(rr(56, 116)), ww = 30, bh = 12;
+      tier(st, x0, x1, z0, z1, 0, bh, t, true, true, rc);
+      tier(st, x0, x1, z1 - 15, z1, bh, h, t, false, true, rc);
+      for (const [a, b] of [[x0, x0 + ww], [cx - ww / 2, cx + ww / 2], [x1 - ww, x1]]) { tier(st, a, b, z0, z1 - 15, bh, h, t, false, true, rc); roofStuff(a, b, z0, z1 - 15, h, h); }
+      garden(x0 + ww, cx - ww / 2, z0, z1 - 15, bh, 4); garden(cx + ww / 2, x1 - ww, z0, z1 - 15, bh, 4);
+    } else { // a monumental hall: colonnade, grand stair, copper roof
+      const st = pick([6, 13, 6]), h = 26;
+      tier(st, x0, x1, z0 + 9, z1, 0, h, [1.02, 1.0, 0.94], false, true, rc);
+      B.flat.box(cx - 44, cx + 44, h, h + 14, cz - 14, cz + 18, K.stone); addBox(cx - 44, cx + 44, h, h + 14, cz - 14, cz + 18);
+      B.flat.pyr(cx - 46, cx + 46, cz - 16, cz + 20, h + 14, 13, K.copper);
+      B.flat.box(x0 + 14, x1 - 14, 0, 2.2, z0 + 1, z0 + 9, K.trim); addBox(x0 + 14, x1 - 14, 0, 2.2, z0 + 1, z0 + 9);
+      for (let x = x0 + 18; x <= x1 - 18; x += 8) cone(x, z0 + 4.5, 2.2, 1.25, 1.1, 19, 10, K.trim);
+      B.flat.box(x0 + 13, x1 - 13, 21.2, 25.5, z0 + 2, z0 + 9, K.trim, true); addBox(x0 + 13, x1 - 13, 21.2, 25.5, z0 + 2, z0 + 9);
+    }
   }
   // street furniture: the small things that make a sidewalk read as a real one
   function props(x0, x1, z0, z1) {
@@ -521,6 +638,17 @@ export function buildWorld(scene, renderer) {
       q = c(); B.spill.quad([ax1, y, az0], [ax1, y, az1], [x1, y, az1], [x1, y, az0], [0, 1, 0], F, F, E, E, q);
     }
     const tsq = (i === 4 || i === 5) && j >= 14 && j <= 15;
+    if (i === 4 && (j === 10 || j === 11)) { // the opening rooftop: a clean ledge looking over low roofs straight at the Midtown giants
+      if (j === 10) {
+        const cx = (ax0 + ax1) / 2; curTile = TILE;
+        tier(13, cx - 21, cx + 21, az0, az1, 0, 108, [1.0, 0.97, 0.9], true, true, ROOFS[1]); fins(cx - 21, cx + 21, az0, az1, SHOP_H + 0.5, 106.6, 7, K.stone);
+        spawnRoof.x = cx; spawnRoof.y = 108; spawnRoof.z = az1;
+        fill(ax0, cx - 22, az0, az1, zn, i, j, 20, 44); fill(cx + 22, ax1, az0, az1, zn, i, j, 20, 44);
+      } else fill(ax0, ax1, az0, az1, zn, i, j, 16, 34);
+      continue;
+    }
+    const mk2 = tsq ? null : megaPick(zn);
+    if (mk2) { mega(mk2, ax0, ax1, az0, az1); continue; }
     const lots = tsq ? fill(ax0, ax1, az0, az1, zn, i, j, 56, 120) : fill(ax0, ax1, az0, az1, zn, i, j, 0, 0, zn === 'midtown' && j === 18 && i >= 2 && i <= 6);
     { // blade signs hung off the shopfronts
       const np = zn === 'midtown' || zn === 'fidi' ? 0.62 : zn === 'village' ? 0.48 : 0.3;
@@ -694,8 +822,7 @@ export function buildWorld(scene, renderer) {
   let NT = 0, NL = 0, chunkMeshes = 0;
   for (const key in buckets) {
     const b = buckets[key];
-    b.fb.forEach((g, i) => { if (g.p.length) { addMesh(g.geo(), facadeMats[i]); chunkMeshes++; } });
-    if (b.shop.p.length) addMesh(b.shop.geo(), shopMat, false, true);
+    if (b.fb.p.length) { addMesh(b.fb.geo(), facadeMat); chunkMeshes++; }
     const fl = b.geos.slice(); if (b.flat.p.length) fl.unshift(b.flat.geo());
     if (fl.length) addMesh(mergeGeometries(fl), flatMat);
     if (b.walk.p.length) addMesh(b.walk.geo(), walkMat, false, true);
@@ -825,9 +952,9 @@ export function buildWorld(scene, renderer) {
     const tf = f >= 1 ? 1 : f > 0.6 ? 0.8 : 0.55;
     for (const m of treeMeshes) { m.count = Math.max(1, Math.round(m.userData.full * tf)); m.castShadow = treeShadows && !m.userData.far; }
   }
-  function setDetail(hi) { // drop the per-pixel extras on the lowest tiers
-    for (let i = 0; i < facadeMats.length; i++) { const want = hi ? facadeTex[i].nrm : null; if (facadeMats[i].normalMap !== want) { facadeMats[i].normalMap = want; facadeMats[i].needsUpdate = true; } }
-  }
+  function setDetail() {}
+  function freeTextureData() { facadeU.tAlb.value.image.data = null; facadeU.tRM.value.image.data = null; }   // the GPU has its copy; give the memory back
+  function setWindows(win, lit, shop) { facadeU.uWin.value = win; facadeU.uLit.value = lit; facadeU.uShop.value = shop; }
   function setNight(on) { for (const m of nightMeshes) m.visible = on; }
   function setStreetLight(k, neon) { // k: 0 day .. 1 night
     for (const m of lightMeshes) m.visible = k > 0.01;
@@ -850,6 +977,6 @@ export function buildWorld(scene, renderer) {
       if (fr !== b.frame) { b.frame = fr; drawBB(b.g, b.brand + Math.floor(time / 7 + i * 0.25), time); b.tex.needsUpdate = true; }
     }
   }
-  return { facadeMats, shopMat, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, MAP, drawMap, vents, parkRect,
+  return { facadeMat, freeTextureData, setWindows, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, spawnRoof, MAP, drawMap, vents, parkRect,
     stats: { boxes: boxes.length, trees: NT, lamps: NL, boards: bbSpots.length, spans: spans.length, chunks: Object.keys(buckets).length, facadeMeshes: chunkMeshes } };
 }

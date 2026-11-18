@@ -27,7 +27,8 @@ Open `index.html` in a browser, click to start.
 | X | restart |
 | G | graphics quality (auto-tunes toward 100 FPS until you change it) |
 | T | time of day (golden hour / midday / night) |
-| M | sound on/off |
+| M | city map and time trials (pick one with a click or 1-4) |
+| N | mute |
 | H | toggle help |
 
 ## Develop

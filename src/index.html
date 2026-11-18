@@ -66,6 +66,38 @@
   #help.hide { display:none; }
   .overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:opacity .6s;
     background:linear-gradient(180deg, rgba(5,8,14,.15) 0%, rgba(5,8,14,.55) 55%, rgba(5,8,14,.9) 100%); }
+  /* the title sits over the opening shot: text top and bottom, the hero on the ledge left clear in between */
+  #start { justify-content:space-between; padding:5vh 0 6vh; background:linear-gradient(180deg, rgba(5,8,14,.7) 0%, rgba(5,8,14,0) 34%, rgba(5,8,14,0) 58%, rgba(5,8,14,.82) 100%); }
+  #start .top, #start .bottom { display:flex; flex-direction:column; align-items:center; }
+  #start .title { font-size:clamp(60px, 10vw, 150px); }
+  #start .cta { margin-top:0; }
+  #start .keys { margin-top:16px; grid-template-columns:repeat(6, auto); gap:4px 22px; font-size:13px; }
+  #start .cta { padding:9px 38px; font-size:19px; }
+  #start { padding:4vh 0 3.5vh; }
+  #fade { position:fixed; inset:0; background:#05070c; pointer-events:none; opacity:1; transition:opacity 3s ease-in; z-index:20; }
+  #fade.out { opacity:0; }
+  /* city map + time trials */
+  #mapview { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(5,8,14,.86); z-index:10; }
+  #mapview.show { display:flex; }
+  .mv-head { width:min(92vw, 1100px); display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; font-size:30px; font-weight:800; font-style:italic; letter-spacing:.06em; }
+  .mv-head span { font-size:14px; font-weight:600; font-style:normal; letter-spacing:.2em; color:rgba(255,255,255,.7); cursor:pointer; padding:4px 12px; border:1px solid var(--line); }
+  .mv-body { display:flex; gap:22px; align-items:stretch; max-width:94vw; }
+  #bigmap { border:1px solid var(--line); box-shadow:0 10px 40px rgba(0,0,0,.6); }
+  #trials { width:min(340px, 34vw); display:flex; flex-direction:column; gap:10px; max-height:82vh; overflow-y:auto; }
+  #trials::before { content:"TIME TRIALS"; font-size:13px; font-weight:600; letter-spacing:.26em; color:rgba(255,255,255,.62); }
+  .tcard { padding:10px 14px 11px; background:rgba(255,255,255,.05); border:1px solid var(--line); border-left:3px solid var(--am); cursor:pointer; transition:background .12s, transform .12s; }
+  .tcard:hover { background:rgba(46,242,255,.13); transform:translateX(3px); }
+  .tcard .tn { font-size:22px; font-weight:800; font-style:italic; letter-spacing:.03em; }
+  .tcard .tn b { display:inline-block; width:22px; height:22px; margin-right:9px; border-radius:50%; background:var(--cy); color:#06121a; font-size:14px; font-style:normal; line-height:22px; text-align:center; vertical-align:3px; }
+  .tcard .tb { font-size:15px; font-weight:500; color:rgba(255,255,255,.82); margin:2px 0 6px; }
+  .tcard .tm { display:flex; gap:10px; font-size:12px; font-weight:600; letter-spacing:.12em; color:rgba(255,255,255,.6); }
+  .tcard .tbest { margin-top:5px; font-size:13px; font-weight:700; letter-spacing:.16em; color:var(--am); }
+  .tcard.quit { border-left-color:#ff5a5a; }
+  #trialhud { top:66px; left:50%; transform:translateX(-50%); text-align:center; padding:6px 26px 8px; background:var(--ink); border:1px solid var(--line); border-top:2px solid var(--am); display:none; }
+  #trialhud.on { display:block; }
+  #tname { font-size:13px; font-weight:700; letter-spacing:.28em; color:var(--am); }
+  #ttime { font-size:46px; font-weight:800; font-style:italic; line-height:1; font-variant-numeric:tabular-nums; }
+  #tinfo { font-size:13px; font-weight:600; letter-spacing:.16em; color:rgba(255,255,255,.75); }
   .overlay.gone { opacity:0; pointer-events:none; }
   .title { font-size:clamp(72px, 13vw, 190px); font-weight:800; font-style:italic; line-height:.86; letter-spacing:-.01em; color:#fff; text-shadow:0 6px 40px rgba(0,0,0,.6); }
   .title i { color:var(--cy); font-style:inherit; }
@@ -80,6 +112,7 @@
   #pause .cta { margin-top:0; animation:none; }
   #hud-bl { transform-origin:left bottom; } #hud-br { transform-origin:right bottom; }
   @media (max-width:1150px), (max-height:640px) { #hud-bl, #hud-br { transform:scale(.78); } #style { font-size:34px; } #trick { font-size:36px; } }
+  @media (max-width:1150px) { #help { display:none; } #start .keys { grid-template-columns:repeat(3, auto); } }
   @media (max-width:900px) { #help, .keys { grid-template-columns:repeat(2, auto); } #hud-tr { display:none; } }
 </style>
 </head>
@@ -106,19 +139,25 @@
   <div><b>Q Z E R</b>flip · backflip · corkscrew · spin</div>
   <div><b>WALLS</b>let go and steer in to cling</div>
   <div><b>T</b>time of day</div>
-  <div><b>G</b>graphics level</div>
-  <div><b>X</b>restart · <b>M</b>mute · <b>H</b>hide this</div>
+  <div><b>G</b>graphics · <b>N</b>mute · <b>H</b>hide this</div>
+  <div><b>M</b>map + time trials · <b>X</b>restart</div>
+</div>
+<div id="trialhud" class="hud"><div id="tname"></div><div id="ttime">0.00</div><div id="tinfo"></div></div>
+<div id="mapview">
+  <div class="mv-head">CITY MAP<span id="mapclose">M / ESC · CLOSE</span></div>
+  <div class="mv-body"><canvas id="bigmap"></canvas><div id="trials"></div></div>
 </div>
 <div id="start" class="overlay">
-  <div class="title">SKY<i>THREAD</i></div>
+  <div class="top"><div class="title">SKY<i>THREAD</i></div>
   <div class="thread"></div>
-  <div class="sub">SWING THE BIG CITY</div>
-  <div class="cta" id="cta">BUILDING THE CITY…</div>
+  <div class="sub">SWING THE BIG CITY</div></div>
+  <div class="bottom"><div class="cta" id="cta">BUILDING THE CITY…</div>
   <div class="keys">
     <span><b>WASD</b>move</span><span><b>MOUSE</b>look</span><span><b>SPACE / CLICK</b>hold to swing</span>
-    <span><b>F</b>slingshot</span><span><b>SHIFT</b>sprint · dive</span><span><b>Q Z E R</b>tricks</span>
-  </div>
+    <span><b>F</b>slingshot</span><span><b>SHIFT</b>sprint · dive</span><span><b>M</b>map · time trials</span>
+  </div></div>
 </div>
+<div id="fade"></div>
 <div id="pause" class="overlay"><div class="cta">CLICK TO RESUME</div></div>
 <script>/*__GAME__*/</script>
 </body>
