@@ -8,8 +8,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { buildWorld, boxes, query, makeWebTex, rnd, CYC, AVE_GO, ST_T0, ST_GO } from './world.js';
-import { buildLife } from './life.js';
+import { buildWorld, boxes, query, addBox, makeWebTex, rnd, CYC, AVE_GO, ST_T0, ST_GO, cellX, cellZ, HALFX, HALFZ, BX, BZ } from './world.js';
+import { buildLife, makeFigure } from './life.js';
 import { buildHero, JOINTS } from './hero.js';
 
 const V3 = THREE.Vector3;
@@ -29,11 +29,11 @@ const FORCE_Q = QS.has('q') ? clamp(+QS.get('q') || 0, 0, 4) : QS.has('low') ? 4
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 // near/far: how far detailed and simple cars are drawn; peds: how many people at once
 const QUALITY = [
-  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 1, near: 190, far: 1100, peds: 2500, pedR: 270, detail: true, trees: 1 },
-  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 2, near: 160, far: 900, peds: 1900, pedR: 250, detail: true, trees: 1 },
-  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 1536, shEvery: 2, near: 140, far: 700, peds: 1350, pedR: 220, detail: true, trees: 1 },
-  { name: 'LOW', pr: 0.8, msaa: 0, direct: true, sh: 1024, shEvery: 3, near: 110, far: 500, peds: 850, pedR: 180, detail: false, trees: 0.7 },
-  { name: 'BASIC', pr: 0.6, msaa: 0, direct: true, sh: 0, shEvery: 1, near: 90, far: 380, peds: 480, pedR: 140, detail: false, trees: 0.4 },
+  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 1, near: 190, far: 1100, peds: 2500, pedR: 270, pedHi: 420, detail: true, trees: 1 },
+  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 2, near: 160, far: 900, peds: 1900, pedR: 250, pedHi: 380, detail: true, trees: 1 },
+  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 1536, shEvery: 2, near: 140, far: 700, peds: 1350, pedR: 220, pedHi: 260, detail: true, trees: 1 },
+  { name: 'LOW', pr: 0.8, msaa: 0, direct: true, sh: 1024, shEvery: 3, near: 110, far: 500, peds: 850, pedR: 180, pedHi: 110, detail: false, trees: 0.7 },
+  { name: 'BASIC', pr: 0.6, msaa: 0, direct: true, sh: 0, shEvery: 1, near: 90, far: 380, peds: 480, pedR: 140, pedHi: 0, detail: false, trees: 0.4 },
 ];
 // the automatic tuner walks this ladder of (tier, resolution scale) steps
 const LADDER = [[0, 1], [1, 1], [2, 1], [2, 0.85], [3, 1], [3, 0.85], [4, 1]];
@@ -72,9 +72,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.0004, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00028, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00042, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -173,7 +173,7 @@ function applyQuality(i, dyn = 1, announce = false) {
   renderer.setPixelRatio(pr); buildComposer(q);
   if (composer) composer.setPixelRatio(pr);
   world.setDensity(q.trees, qIdx < 3); world.setDetail(q.detail);
-  life.setQuality({ near: q.near, far: q.far, peds: q.peds, pedR: q.pedR });
+  life.setQuality({ near: q.near, far: q.far, peds: q.peds, pedR: q.pedR, pedHi: q.pedHi });
   sun.castShadow = q.sh > 0;
   if (q.sh > 0 && sun.shadow.mapSize.x !== q.sh) { sun.shadow.mapSize.set(q.sh, q.sh); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   sun.shadow.needsUpdate = true;
@@ -239,7 +239,7 @@ const P = {
   wallN: new V3(), wallMove: new V3(0, 1, 0), hitN: new V3(), wallHit: false, impact: 0,
   zip: null, facing: new V3(0, 0, 1), timeInAir: 0, swingArmed: false, swingCd: 0, wallCd: 0,
   landT: 0, rollT: 0, skimT: 0, launchT: 0, relT: 0, squash: 0, idleT: 0, perch: 0, lean: 0, fy: 0,
-  rpos: new V3(), trick: null, combo: 0, style: 0, runPh: 0, aimW: 0, aimW2: 0, baseQ: new THREE.Quaternion(), offset: new V3(), inp: new V3(), best: 0,
+  rpos: new V3(), reachT: 0, reachAt: new V3(), trick: null, combo: 0, style: 0, runPh: 0, aimW: 0, aimW2: 0, baseQ: new THREE.Quaternion(), offset: new V3(), inp: new V3(), best: 0,
 };
 const tv = new V3(), tv2 = new V3(), tv3 = new V3(), tv4 = new V3(), tq = new THREE.Quaternion(), tq2 = new THREE.Quaternion(), tm = new THREE.Matrix4();
 const qbuf = [], qbuf2 = [];
@@ -254,18 +254,21 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   if (e.repeat) return;
+  if (dlg.on) { if (e.code === 'KeyE' || e.code === 'Space' || e.code === 'Enter') advanceDlg(); return; }
   if (e.code === 'Space') { ev.jump = true; ev.swing = true; }
   if (e.code === 'KeyF') ev.zip = true;
   if (e.code === 'KeyQ') ev.trick = 'q';
   if (e.code === 'KeyZ') ev.trick = 'z';
-  if (e.code === 'KeyE') ev.trick = 'e';
+  if (e.code === 'KeyE') { if (!interact()) ev.trick = 'e'; }
+  if (e.code === 'KeyK') toggleTrim();
   if (e.code === 'KeyR') ev.trick = 'r';
   if (e.code === 'KeyT') applyTOD((todIdx + 1) % TOD.length);
   if (e.code === 'KeyX' && started) { if (TR.phase === 'count' || TR.phase === 'run') startTrial(TR.k); else { endTrial(); respawn(false); P.style = 0; P.combo = 0; flash('RESTARTED'); } }
   if (e.code === 'KeyN') toggleMute();
   if (e.code === 'KeyM') { if (mapOpen) closeMap(); else openMap(); }
   if (e.code === 'Escape' && mapOpen) closeMap();
-  if (mapOpen && /^Digit[1-4]$/.test(e.code)) startTrial(+e.code[5] - 1);
+  if (mapOpen && /^Digit[1-4]$/.test(e.code)) selectTrial(+e.code[5] - 1, true);
+  if (mapOpen && e.code === 'Enter' && MAPV.sel >= 0) startTrial(MAPV.sel);
   if (e.code === 'KeyG') { perf.manual = true; applyQuality((qIdx + QUALITY.length - 1) % QUALITY.length, 1, true); }
   if (e.code === 'KeyH') document.getElementById('help').classList.toggle('hide');
 });
@@ -274,6 +277,7 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse0 =
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
   if (!started) return;
+  if (dlg.on) { advanceDlg(); return; }
   if (!locked) tryLock();
   dragging = true;
   if (e.button === 0) { mouse0 = true; ev.swing = true; if (P.state === 'ground') ev.jump = true; }
@@ -316,13 +320,14 @@ function camRightH(out) { return out.set(-Math.cos(C.yaw), 0, Math.sin(C.yaw)); 
 function moveInput(out) {
   const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
   out.set(0, 0, 0);
+  if (dlg.on || transit.on) return out;
   if (f) out.addScaledVector(camFwdH(tv3), f);
   if (r) out.addScaledVector(camRightH(tv3), r);
   if (out.lengthSq() > 1) out.normalize();
   return out;
 }
 const shiftDown = () => !!(keys.ShiftLeft || keys.ShiftRight);
-const swingDown = () => !!(keys.Space || mouse0);
+const swingDown = () => !shopIn && !dlg.on && !!(keys.Space || mouse0);
 
 // ---------------------------------------------------------------- geometry queries
 function rayBox(o, d, b, maxT) {
@@ -397,7 +402,7 @@ function findAnchor() {
 let zipInfo = null;
 function computeZip() {
   zipInfo = null;
-  if (P.state === 'zip') return;
+  if (P.state === 'zip' || shopIn) return;
   const o = camera.position, d = camera.getWorldDirection(tv);
   const h = raycastWorld(o, d, 360);
   if (!h) return;
@@ -413,6 +418,7 @@ function computeZip() {
 
 // ---------------------------------------------------------------- actions
 function tryAttach() {
+  if (shopIn) return false;
   const a = findAnchor(); if (!a) return false;
   P.hand = P.hand === 'R' ? 'L' : 'R';
   P.state = 'swing'; P.anchor.copy(a.p); P.anchorN.copy(a.n);
@@ -438,6 +444,7 @@ function release(auto) {
 }
 // F: fire a line at the aimed point and haul yourself along it, letting go early so you fly on past
 function startZip(z) {
+  if (shopIn) return;
   if (P.trick) endTrick(true);
   const D = z.target.distanceTo(P.pos);
   P.state = 'zip'; P.zip = { ...z, from: P.pos.clone(), t: 0, speed: Math.max(30, P.vel.length() * 0.8 + 12), rel: clamp(D * 0.3, 6, 30) };
@@ -457,6 +464,7 @@ function slingRelease(dir) {
   if (rnd() < 0.3) startTrick(rnd() < 0.5 ? 'q' : 'e');
 }
 function enterWall(n) {
+  if (shopIn) return;
   P.state = 'wall'; P.wallT = 0; P.wallN.copy(n); P.vel.set(0, Math.max(0, P.vel.y) * 0.4, 0);
   if (P.trick) endTrick(true);
 }
@@ -626,7 +634,7 @@ function step(dt) {
   }
   collide();
   postCollide(inp, jumpEv);
-  if (p.y < -2.2) respawn(true);
+  if (p.y < -2.2 && !shopIn) respawn(true);
 }
 
 function collide() {
@@ -634,7 +642,7 @@ function collide() {
   P.pv.copy(v);
   P.grounded = false; P.wallHit = false; P.impact = 0;
   const onIsland = world.groundAt(p.x, p.z);
-  if (onIsland && p.y < HY) { p.y = HY; if (v.y < 0) { P.impact = -v.y; v.y = 0; } P.grounded = true; }
+  if (onIsland && p.y < HY && !shopIn) { p.y = HY; if (v.y < 0) { P.impact = -v.y; v.y = 0; } P.grounded = true; }
   query(p.x - 2, p.x + 2, p.z - 2, p.z + 2, qbuf);
   for (const b of qbuf) {
     if (!(p.x + HX > b.minX && p.x - HX < b.maxX && p.y + HY > b.minY && p.y - HY < b.maxY && p.z + HZ > b.minZ && p.z - HZ < b.maxZ)) continue;
@@ -701,6 +709,7 @@ function chooseSpawn() { // the city is built with one clean rooftop ledge that 
   intro.edge = r.z;
 }
 function respawn(msg) {
+  leaveShopNow();
   if (msg && TR.phase === 'run') { startTrial(TR.k); return; }   // fell in the river mid-trial: straight back to its start line
   P.pos.copy(spawnPos); P.prev.copy(spawnPos); P.rpos.copy(spawnPos); P.vel.set(0, 0, 0); P.state = 'air'; P.trick = null; P.combo = 0; P.zip = null;
   P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 2;
@@ -887,6 +896,7 @@ function updateAnim(dt, time) {
   const target = st === 'zip' && P.zip ? P.zip.hit : P.anchor;
   if (P.aimW > 0.01) aimArm(R.shR, R.elR, target, P.aimW * (aimR || 1));
   if (P.aimW2 > 0.01) aimArm(R.shL, R.elL, target, P.aimW2 * (aimL || 1));
+  if (P.reachT > 0) aimArm(R.shR, R.elR, P.reachAt, Math.sin(clamp(1 - P.reachT / 0.8, 0, 1) * Math.PI) ** 0.6);   // reaching over a counter
 }
 const _aimA = new V3(), _aimB = new V3(), _hp = new V3();
 function aimArm(sh, el, targetW, w) {
@@ -1213,11 +1223,12 @@ function captureEnv() { // used only by the building facades; everything else ke
 // ---------------------------------------------------------------- city map (M) and time trials
 function topAt(x, z) { let y = world.groundAt(x, z) ? 0 : -3; query(x - 0.5, x + 0.5, z - 0.5, z + 0.5, qbuf); for (const b of qbuf) if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.maxY > y) y = b.maxY; return y; }
 const FOUNT = world.parkRect.fountain;
+const AVX = (a) => -HALFX + a * BX, STZ = (r) => -HALFZ + r * BZ;
 const TRIALS = [
   { name: 'UPTOWN EXPRESS', blurb: 'From the Village rooftops to the fountain in the park', start: null, goal: [FOUNT[0] + 9, 1.2, FOUNT[1]], r: 9, medals: [36, 46, 62] },
-  { name: 'THE CLIMB', blurb: 'From the avenue to the crown of the great Midtown tower', start: [84, -114], goal: [0, 374, -190], r: 12, medals: [30, 42, 62] },
-  { name: 'DOWNTOWN DIVE', blurb: 'Leap off the downtown giant and touch down in Battery Park', start: [7, -874], goal: [0, 1.2, -1178], r: 16, medals: [10, 14, 22] },
-  { name: 'RIVER TO RIVER', blurb: 'Straight across town, east shore to a west side pier', start: [-748, -152], goal: [880, 1.2, -53], r: 11, medals: [48, 60, 82] },
+  { name: 'THE CLIMB', blurb: 'From the avenue to the crown of the great Midtown tower', start: [AVX(5), STZ(14.5)], goal: [cellX(4), 374, cellZ(13)], r: 12, medals: [30, 42, 62] },
+  { name: 'DOWNTOWN DIVE', blurb: 'Leap off the downtown giant and touch down in Battery Park', start: [cellX(4) + 7, cellZ(4)], goal: [cellX(4), 1.2, cellZ(0)], r: 16, medals: [10, 14, 22] },
+  { name: 'RIVER TO RIVER', blurb: 'Straight across town, east shore to a west side pier', start: [-HALFX + 8, STZ(14)], goal: [880, 1.2, STZ(7.5 + 3 * 2.6)], r: 11, medals: [48, 60, 82] },
 ];
 const TR = { k: -1, phase: 'idle', count: 0, t: 0, doneT: 0, goal: new V3(), best: {} };
 try { TR.best = JSON.parse(localStorage.getItem('skythread-best') || '{}') || {}; } catch (_) { TR.best = {}; }
@@ -1233,6 +1244,7 @@ let mapOpen = false;
 function startTrial(k) {
   const T = TRIALS[k], sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z;
   if (mapOpen) closeMap();
+  leaveShopNow();
   P.pos.set(sx, topAt(sx, sz) + HY + 0.05, sz); P.prev.copy(P.pos); P.rpos.copy(P.pos); P.vel.set(0, 0, 0);
   P.state = 'ground'; P.trick = null; P.zip = null; P.combo = 0; P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 0;
   const yaw = Math.atan2(T.goal[0] - sx, T.goal[2] - sz);
@@ -1268,53 +1280,13 @@ function updateTrial(dt) {
   beacon.getObjectByName('ring').position.y = 0.4 + Math.sin(time * 3) * 0.25;
   beacon.children[0].material.opacity = 0.22 * clamp((d - 12) / 60, 0.15, 1);   // the beam thins out as you close in, so it never fills the view
 }
-function miniGoal(c, k, u) { // the active goal on the minimap, pinned to the rim when it is out of range
-  const lx = -(TR.goal.x - P.pos.x) * k, ly = -(TR.goal.z - P.pos.z) * k, cs = Math.cos(C.yaw), sn = Math.sin(C.yaw);
+function miniGoal(c, k, u, G = TR.goal, col = '#ffb14a') { // a goal on the minimap, pinned to the rim when it is out of range
+  const lx = -(G.x - P.pos.x) * k, ly = -(G.z - P.pos.z) * k, cs = Math.cos(C.yaw), sn = Math.sin(C.yaw);
   let rx = lx * cs - ly * sn, ry = lx * sn + ly * cs; const len = Math.hypot(rx, ry), max = c - 9 * u;
   if (len > max) { rx *= max / len; ry *= max / len; }
-  mctx.fillStyle = '#ffb14a'; mctx.strokeStyle = '#0b1220'; mctx.lineWidth = 2 * u;
+  mctx.fillStyle = col; mctx.strokeStyle = '#0b1220'; mctx.lineWidth = 2 * u;
   mctx.save(); mctx.translate(c + rx, c + ry); mctx.rotate(Math.PI / 4); mctx.beginPath(); mctx.rect(-5 * u, -5 * u, 10 * u, 10 * u); mctx.stroke(); mctx.fill(); mctx.restore();
 }
-const BM = { x0: -1170, x1: 1000 };
-function drawBigMap() {
-  const cv = document.getElementById('bigmap'), M = world.MAP, H = Math.min(innerHeight * 0.8, 860), sc = H / (M.z1 - M.z0), W = (BM.x1 - BM.x0) * sc, dpr = Math.min(window.devicePixelRatio || 1, 2);
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const X = (x) => (BM.x1 - x) * sc, Z = (z) => (M.z1 - z) * sc;
-  g.drawImage(mapCv, (M.x1 - BM.x1) * MSC, 0, (BM.x1 - BM.x0) * MSC, mapCv.height, 0, 0, W, H);
-  g.font = '700 13px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  TRIALS.forEach((T, k) => {
-    const sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z;
-    g.strokeStyle = 'rgba(255,177,74,0.75)'; g.lineWidth = 2; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(X(sx), Z(sz)); g.lineTo(X(T.goal[0]), Z(T.goal[2])); g.stroke(); g.setLineDash([]);
-    g.fillStyle = '#ffb14a'; g.save(); g.translate(X(T.goal[0]), Z(T.goal[2])); g.rotate(Math.PI / 4); g.fillRect(-5, -5, 10, 10); g.restore();
-    g.fillStyle = '#2ef2ff'; g.beginPath(); g.arc(X(sx), Z(sz), 10, 0, TAU); g.fill(); g.fillStyle = '#06121a'; g.fillText(String(k + 1), X(sx), Z(sz) + 1);
-  });
-  g.save(); g.translate(X(P.pos.x), Z(P.pos.z)); g.rotate(-Math.atan2(P.facing.x, P.facing.z));
-  g.beginPath(); g.moveTo(0, -11); g.lineTo(8, 9); g.lineTo(0, 4); g.lineTo(-8, 9); g.closePath(); g.fillStyle = '#fff'; g.strokeStyle = '#0b1220'; g.lineWidth = 2.5; g.stroke(); g.fill(); g.restore();
-}
-function trialCards() {
-  document.getElementById('trials').innerHTML = TRIALS.map((T, k) => {
-    const b = TR.best[T.name], m = T.medals, medal = !b ? '' : b <= m[0] ? 'GOLD' : b <= m[1] ? 'SILVER' : b <= m[2] ? 'BRONZE' : '';
-    return `<div class="tcard" data-k="${k}"><div class="tn"><b>${k + 1}</b>${T.name}</div><div class="tb">${T.blurb}</div><div class="tm"><span>GOLD ${m[0]}s</span><span>SILVER ${m[1]}s</span><span>BRONZE ${m[2]}s</span></div><div class="tbest">${b ? 'BEST ' + b.toFixed(2) + ' S' + (medal ? ' · ' + medal : '') : 'NOT RUN YET'}</div></div>`;
-  }).join('') + (TR.phase !== 'idle' ? '<div class="tcard quit" data-k="-1"><div class="tn">LEAVE TRIAL</div><div class="tb">Back to free roaming</div></div>' : '');
-}
-function openMap() {
-  if (!started || mapOpen) return;
-  mapOpen = true; drawBigMap(); trialCards();
-  document.getElementById('mapview').classList.add('show'); document.getElementById('pause').classList.remove('show');
-  if (document.pointerLockElement) document.exitPointerLock();
-}
-function closeMap() {
-  if (!mapOpen) return;
-  mapOpen = false; document.getElementById('mapview').classList.remove('show');
-  if (!QS.has('nolock')) tryLock();
-}
-document.getElementById('trials').addEventListener('click', (e) => {
-  const el = e.target.closest('.tcard'); if (!el) return;
-  const k = +el.dataset.k; if (k < 0) { endTrial(); closeMap(); } else startTrial(k);
-});
-document.getElementById('mapclose').addEventListener('click', () => closeMap());
-
 // ---------------------------------------------------------------- opening shot: the hero walks to the roof's edge and settles into a crouch
 const intro = { t: 0, on: true, edge: 0 };
 function introStep(dt) {
@@ -1329,6 +1301,396 @@ function introLeap() { // the click: straight from the crouch into a running div
   intro.on = false;
   P.pos.z = Math.max(P.pos.z, intro.edge - 2.5); P.state = 'air'; P.vel.set(0, 10.5, 15); P.timeInAir = 0; P.swingArmed = false; P.idleT = 0;
   C.yawT = 0; C.pitchT = -0.2; whoosh(0.7);
+}
+
+// ---------------------------------------------------------------- the city map (M): the camera lifts to a tilted bird's-eye view of the real city
+camera.far = 14000; camera.updateProjectionMatrix(); sky.renderOrder = -10;
+const MAPV = { k: 0, yaw: 0, zoom: 1, sel: -1, drag: false };
+const mfx = document.getElementById('mapfx'), mg = mfx.getContext('2d');
+const _mq = new THREE.Quaternion(), _mq2 = new THREE.Quaternion(), _mp = new V3(), _mv = new V3();
+function trialCards() {
+  document.getElementById('trials').innerHTML = TRIALS.map((T, k) => {
+    const b = TR.best[T.name], m = T.medals, medal = !b ? '' : b <= m[0] ? 'GOLD' : b <= m[1] ? 'SILVER' : b <= m[2] ? 'BRONZE' : '', on = MAPV.sel === k;
+    return `<div class="tcard${on ? ' sel' : ''}" data-k="${k}"><div class="tn"><b>${k + 1}</b>${T.name}</div><div class="tb">${T.blurb}</div>` +
+      (on ? `<div class="tm"><span>GOLD ${m[0]}s</span><span>SILVER ${m[1]}s</span><span>BRONZE ${m[2]}s</span></div>` : '') +
+      `<div class="tbest">${b ? 'BEST ' + b.toFixed(2) + ' S' + (medal ? ' · ' + medal : '') : 'NOT RUN YET'}</div>${on ? '<div class="go">START  ▸</div>' : ''}</div>`;
+  }).join('') + (TR.phase !== 'idle' ? '<div class="tcard quit" data-k="-1"><div class="tn">LEAVE TRIAL</div><div class="tb">Back to free roaming</div></div>' : '') +
+    `<div class="tcard story" data-k="-2"><div class="tn">LAST ORDERS</div><div class="tb">${QUEST.step >= 7 ? 'Story complete · click to play it again' : QTEXT[QUEST.step]}</div><div class="tbest">STORY · ${Math.min(QUEST.step, 7)} / 7</div></div>`;
+}
+function selectTrial(k, again) { if (MAPV.sel === k && again) { startTrial(k); return; } MAPV.sel = k; trialCards(); }
+function openMap() {
+  if (!started || mapOpen) return;
+  if (shopIn || dlg.on || transit.on) { flash('STEP OUTSIDE FIRST'); return; }
+  mapOpen = true; MAPV.sel = TR.phase !== 'idle' ? TR.k : -1; MAPV.yaw = 0; MAPV.zoom = 1; trialCards();
+  document.getElementById('mapview').classList.add('show'); document.body.classList.add('mapping'); document.getElementById('pause').classList.remove('show');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeMap() {
+  if (!mapOpen) return;
+  mapOpen = false; document.getElementById('mapview').classList.remove('show'); document.body.classList.remove('mapping');
+  if (!QS.has('nolock')) tryLock();
+}
+document.getElementById('trials').addEventListener('click', (e) => {
+  const el = e.target.closest('.tcard'); if (!el) return;
+  const k = +el.dataset.k;
+  if (k === -1) { endTrial(); closeMap(); }
+  else if (k === -2) { if (QUEST.step >= 7) { QUEST.step = 0; saveStory(); trialCards(); } }
+  else if (MAPV.sel === k) startTrial(k); else selectTrial(k);
+});
+document.getElementById('mapclose').addEventListener('click', () => closeMap());
+mfx.addEventListener('mousedown', () => { MAPV.drag = true; });
+addEventListener('mouseup', () => { MAPV.drag = false; });
+addEventListener('mousemove', (e) => { if (mapOpen && MAPV.drag) MAPV.yaw = clamp(MAPV.yaw - (e.movementX || 0) * 0.004, -1.25, 1.25); });
+mfx.addEventListener('wheel', (e) => { MAPV.zoom = clamp(MAPV.zoom * (e.deltaY > 0 ? 1.08 : 0.925), 0.45, 1.25); e.preventDefault(); }, { passive: false });
+function mproj(x, y, z) { _mv.set(x, y, z).project(camera); return [(_mv.x * 0.5 + 0.5) * innerWidth, (-_mv.y * 0.5 + 0.5) * innerHeight]; }
+const MAPLBL = [[0, STZ(0.4)], [0, STZ(4.5)], [0, STZ(10)], [0, STZ(16.5)], [0, STZ(23.5)], [0, STZ(30.5)], [0, STZ(35.6)], [-2300, -900], [-2300, 800], [2400, 0], [0, HALFZ + 1100], [0, -HALFZ - 1300]].map(([x, z]) => [x, z, world.zoneAt(x, z)]).filter((l) => l[2])
+  .concat([[1040, STZ(23.5), 'UPPER WEST SIDE'], [-1040, STZ(23.5), 'UPPER EAST SIDE']]);
+function drawMapFx(a) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), W = innerWidth, H = innerHeight;
+  if (mfx.width !== Math.round(W * dpr) || mfx.height !== Math.round(H * dpr)) { mfx.width = Math.round(W * dpr); mfx.height = Math.round(H * dpr); }
+  mg.setTransform(dpr, 0, 0, dpr, 0, 0); mg.clearRect(0, 0, W, H);
+  if (a <= 0) return;
+  camera.updateMatrixWorld();
+  mg.globalAlpha = a; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.lineJoin = 'round';
+  const text = (t, x, y, px, col, sp = 3) => { mg.font = `700 ${px}px "Barlow Condensed", "Arial Narrow", sans-serif`; try { mg.letterSpacing = sp + 'px'; } catch (_) {} mg.lineWidth = 4; mg.strokeStyle = 'rgba(5,9,16,0.85)'; mg.strokeText(t, x, y); mg.fillStyle = col; mg.fillText(t, x, y); };
+  for (const [x, z, name] of MAPLBL) { const p = mproj(x, 0, z); text(name, p[0], p[1], Math.abs(x) > 1500 || Math.abs(z) > HALFZ ? 15 : 12, 'rgba(255,255,255,0.7)', 3); }
+  for (const s of SHOPS) { // the shops you can walk into
+    const p = mproj(s.x, 30, s.z);
+    mg.beginPath(); mg.arc(p[0], p[1], 9, 0, TAU); mg.fillStyle = '#0b1220'; mg.fill(); mg.lineWidth = 2; mg.strokeStyle = s.css; mg.stroke();
+    mg.font = '700 11px "Barlow Condensed", sans-serif'; try { mg.letterSpacing = '0px'; } catch (_) {} mg.fillStyle = s.css; mg.fillText(s.name[0], p[0], p[1] + 1);
+    text(s.name, p[0], p[1] + 19, 11, '#fff', 1.5);
+  }
+  if (QUEST.mark && QUEST.step < 7) { // the story objective
+    const p = mproj(QUEST.at.x, QUEST.at.y + 20, QUEST.at.z), r = 8 + Math.sin(performance.now() * 0.005) * 2;
+    mg.save(); mg.translate(p[0], p[1] - 26); mg.rotate(Math.PI / 4); mg.fillStyle = '#2ef2ff'; mg.strokeStyle = '#0b1220'; mg.lineWidth = 2.5; mg.beginPath(); mg.rect(-r, -r, 2 * r, 2 * r); mg.stroke(); mg.fill(); mg.restore();
+    text('STORY', p[0], p[1] - 46, 12, '#2ef2ff', 3);
+  }
+  if (MAPV.sel >= 0) { // only the trial that was picked shows its route
+    const T = TRIALS[MAPV.sel], sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z, sy = topAt(sx, sz), len = Math.hypot(T.goal[0] - sx, T.goal[2] - sz);
+    mg.setLineDash([9, 7]); mg.lineWidth = 3; mg.strokeStyle = '#ffb14a'; mg.beginPath();
+    for (let i = 0; i <= 32; i++) { const t = i / 32, p = mproj(sx + (T.goal[0] - sx) * t, sy + (T.goal[1] - sy) * t + Math.sin(t * Math.PI) * len * 0.22, sz + (T.goal[2] - sz) * t); if (i) mg.lineTo(p[0], p[1]); else mg.moveTo(p[0], p[1]); }
+    mg.stroke(); mg.setLineDash([]);
+    const g = mproj(T.goal[0], T.goal[1], T.goal[2]), s0 = mproj(sx, sy, sz);
+    mg.save(); mg.translate(g[0], g[1]); mg.rotate(Math.PI / 4); mg.fillStyle = '#ffb14a'; mg.strokeStyle = '#0b1220'; mg.lineWidth = 2.5; mg.beginPath(); mg.rect(-7, -7, 14, 14); mg.stroke(); mg.fill(); mg.restore();
+    mg.beginPath(); mg.arc(s0[0], s0[1], 11, 0, TAU); mg.fillStyle = '#2ef2ff'; mg.fill(); mg.font = '700 14px "Barlow Condensed", sans-serif'; mg.fillStyle = '#06121a'; mg.fillText(String(MAPV.sel + 1), s0[0], s0[1] + 1);
+    text(T.name + '  ·  ' + Math.round(len) + ' M', g[0], g[1] - 22, 13, '#ffb14a', 2);
+  }
+  { // you
+    const p = mproj(P.pos.x, P.pos.y, P.pos.z), f = mproj(P.pos.x + P.facing.x * 80, P.pos.y, P.pos.z + P.facing.z * 80);
+    mg.save(); mg.translate(p[0], p[1]); mg.rotate(Math.atan2(f[0] - p[0], -(f[1] - p[1])));
+    mg.beginPath(); mg.moveTo(0, -12); mg.lineTo(8.5, 9); mg.lineTo(0, 4); mg.lineTo(-8.5, 9); mg.closePath(); mg.fillStyle = '#fff'; mg.strokeStyle = '#0b1220'; mg.lineWidth = 3; mg.stroke(); mg.fill(); mg.restore();
+    text('YOU', p[0], p[1] + 22, 11, '#fff', 3);
+  }
+  mg.globalAlpha = 1;
+}
+function mapCamera(dt) {
+  const to = mapOpen ? 1 : 0;
+  if (MAPV.k === 0 && !to) return;
+  MAPV.k += (to - MAPV.k) * (1 - Math.exp(-dt * 4.2)); if (Math.abs(to - MAPV.k) < 0.003) MAPV.k = to;
+  const e = smooth(MAPV.k), D = 2500 * MAPV.zoom, H = 3700 * MAPV.zoom;
+  _mq.copy(camera.quaternion); _mp.copy(camera.position);
+  const sh = innerWidth / innerHeight > 1.3 ? 520 * MAPV.zoom : 0, ox = -Math.cos(MAPV.yaw) * sh, oz = 120 + Math.sin(MAPV.yaw) * sh;   // the island sits left of the trial cards
+  camera.position.set(ox - Math.sin(MAPV.yaw) * D, H, oz - Math.cos(MAPV.yaw) * D); camera.lookAt(ox, 0, oz); _mq2.copy(camera.quaternion);
+  camera.position.lerpVectors(_mp, camera.position, e); camera.quaternion.slerpQuaternions(_mq, _mq2, e);
+  camera.fov += (38 - camera.fov) * e; camera.updateProjectionMatrix();
+  scene.fog.density = TOD[todIdx].fogD * (1 - 0.86 * e);
+  renderer.toneMappingExposure = TOD[todIdx].exp * (1 + (todIdx === 2 ? 0.9 : 1.5) * e);   // rooftops seen from above need more light than the street view
+  world.cloudMat.visible = e < 0.35;
+  drawMapFx(clamp((MAPV.k - 0.6) / 0.35, 0, 1));
+}
+
+// ---------------------------------------------------------------- shops you can walk into
+const LC = (h) => { const c = new THREE.Color(h); return [c.r, c.g, c.b]; };
+const F0 = -300, RW = 6.5, RD = 11, RH = 3.9;   // interiors sit in their own sealed rooms far below the street
+let srs = 12345; const sr = () => ((srs = (srs * 1664525 + 1013904223) >>> 0) / 4294967296), srr = (a, b) => a + (b - a) * sr();
+function pb(B, x0, x1, y0, y1, z0, z1, col, k = 1) { // a box with its lighting baked in
+  const v = (i) => [i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? z1 : z0];
+  const f = (a, b, c, d, s) => { for (const i of [a, b, c, a, c, d]) { const p = v(i); B.p.push(p[0], p[1], p[2]); B.c.push(col[0] * s * k, col[1] * s * k, col[2] * s * k); } };
+  f(2, 6, 7, 3, 1); f(0, 1, 5, 4, 0.72); f(0, 4, 6, 2, 0.8); f(1, 3, 7, 5, 0.8); f(0, 2, 3, 1, 0.9); f(4, 5, 7, 6, 0.9);
+}
+const SHOPDEF = {
+  bodega: { keeper: 'MARA', col: 0xffb14a, shirt: [0.55, 0.12, 0.14], pants: [0.1, 0.11, 0.16], skin: 0.55, hair: 0.05, chat: ['Swing safe out there. And wipe your feet next time.', 'Coffee is a dollar. Advice is free.', 'The cat runs this place. I just work the till.'] },
+  pizza: { keeper: 'NICO', col: 0xff4b3a, shirt: [0.9, 0.9, 0.88], pants: [0.12, 0.12, 0.13], skin: 0.3, hair: 0.2, chat: ['Best slice below Midtown. Ask anybody.', 'You want speed? Eat carbs.', 'Oven has been burning since my grandfather lit it.'] },
+  coffee: { keeper: 'AKI', col: 0x7fe3c4, shirt: [0.16, 0.3, 0.26], pants: [0.2, 0.17, 0.14], skin: 0.2, hair: 0.02, chat: ['Kumo means cloud. Fitting, for you.', 'One flat white, fast as you like.', 'You track rain in here and you mop it.'] },
+  optics: { keeper: 'JUNO', col: 0xb58cff, shirt: [0.2, 0.16, 0.36], pants: [0.08, 0.08, 0.1], skin: 0.7, hair: 0.0, chat: ['Lenses, prints, repairs. No selfie sticks.', 'The light at golden hour does half my job.', 'Bring me a shot from up high some time.'] },
+};
+const roomMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false });
+const doorGlass = new THREE.MeshStandardMaterial({ color: 0x9fd0e6, roughness: 0.08, metalness: 0.5, transparent: true, opacity: 0.38 });
+const doorFrame = new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.5, metalness: 0.6 });
+function signTex(name, css) {
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 192; const g = cv.getContext('2d'), t = new THREE.CanvasTexture(cv);
+  const draw = () => {
+    g.fillStyle = '#0d1016'; g.fillRect(0, 0, 1024, 192); g.strokeStyle = css; g.lineWidth = 8; g.strokeRect(10, 10, 1004, 172);
+    g.font = 'italic 800 118px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = css; g.shadowColor = css; g.shadowBlur = 22; g.fillText(name, 512, 102, 960); g.shadowBlur = 0; t.needsUpdate = true;
+  };
+  draw(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function buildRoom(s) {
+  const B = { p: [], c: [] }, d = s.d, X = (u) => s.x - d * u, Z = (w) => s.z + d * w, T = s.type;
+  const rb = (u0, u1, y0, y1, w0, w1, col, k = 1, solid = false) => {
+    const x0 = Math.min(X(u0), X(u1)), x1 = Math.max(X(u0), X(u1)), z0 = Math.min(Z(w0), Z(w1)), z1 = Math.max(Z(w0), Z(w1));
+    pb(B, x0, x1, F0 + y0, F0 + y1, z0, z1, col, k); if (solid) addBox(x0, x1, F0 + y0, F0 + y1, z0, z1).prop = true;
+  };
+  const PAL = {
+    bodega: { wall: LC(0xe9dfb4), low: LC(0x3f7a52), fa: LC(0xb9b9b4), fb: LC(0x8d8f90), ceil: LC(0xe8e6de), top: LC(0x7a5a3c), front: LC(0x9a3a2e) },
+    pizza: { wall: LC(0xf1e4c6), low: LC(0xb3261e), fa: LC(0xd9d2c4), fb: LC(0x9c2a22), ceil: LC(0xeee6d2), top: LC(0xd8d2c6), front: LC(0x2c5a3a) },
+    coffee: { wall: LC(0xe6e2d6), low: LC(0x8aa58f), fa: LC(0x9a6a40), fb: LC(0x86592f), ceil: LC(0xf0ece2), top: LC(0xc9a070), front: LC(0x2a2f33) },
+    optics: { wall: LC(0x1c2236), low: LC(0x12162a), fa: LC(0x24272e), fb: LC(0x1c1f25), ceil: LC(0x151a28), top: LC(0xe8e8ee), front: LC(0x2b2f45) },
+  }[T];
+  // shell
+  rb(-RW - 1, RW + 1, -1, 0, -1, RD + 1, PAL.fa, 1, true); rb(-RW - 1, RW + 1, RH, RH + 1, -1, RD + 1, PAL.ceil, 1.25, true);
+  rb(-RW - 1, -RW, 0, RH, -1, RD + 1, PAL.wall, 1, true); rb(RW, RW + 1, 0, RH, -1, RD + 1, PAL.wall, 1, true);
+  rb(-RW, RW, 0, RH, RD, RD + 1, PAL.wall, 1, true); rb(-RW, RW, 0, RH, -1, 0, PAL.wall, 1, true);
+  for (let i = 0; i < 13; i++) for (let j = 0; j < 11; j++) { // floor: tiles or boards
+    const wood = T === 'coffee', c = wood ? (j % 2 ? PAL.fa : PAL.fb) : (i + j) % 2 ? PAL.fa : PAL.fb, kk = wood ? srr(0.85, 1.08) : 1;
+    const x0 = Math.min(X(-RW + i), X(-RW + i + 1)), z0 = Math.min(Z(j), Z(j + 1)), y = F0 + 0.004;
+    for (const [px, pz] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { B.p.push(x0 + px, y, z0 + pz); B.c.push(c[0] * kk, c[1] * kk, c[2] * kk); }
+  }
+  rb(-RW, -RW + 0.03, 0, 1.05, 0, RD, PAL.low); rb(RW - 0.03, RW, 0, 1.05, 0, RD, PAL.low); rb(-RW, RW, 0, 1.05, RD - 0.03, RD, PAL.low); rb(-RW, RW, 0, 1.05, 0, 0.03, PAL.low);
+  rb(-RW, RW, 1.05, 1.11, RD - 0.05, RD, LC(0xffffff), 0.8); rb(-RW, -RW + 0.05, 1.05, 1.11, 0, RD, LC(0xffffff), 0.8); rb(RW - 0.05, RW, 1.05, 1.11, 0, RD, LC(0xffffff), 0.8);
+  // the way out: a bright glass door to the street, with a sign over it
+  rb(-1.55, 1.55, 0, 2.85, 0, 0.07, LC(0x15181d)); rb(-1.35, -0.03, 0.06, 2.7, 0.07, 0.09, LC(0xcfe6ff), 2.3); rb(0.03, 1.35, 0.06, 2.7, 0.07, 0.09, LC(0xcfe6ff), 2.3);
+  rb(-0.5, 0.5, 2.95, 3.2, 0, 0.06, LC(0x35ff7a), 2.6);
+  for (const [u, w] of [[-3.2, 3], [3.2, 3], [-3.2, 8], [3.2, 8], [0, 5.5]]) rb(u - 0.7, u + 0.7, RH - 0.05, RH, w - 0.22, w + 0.22, T === 'optics' ? LC(0xc9b8ff) : LC(0xfff0cf), T === 'optics' ? 3 : 3.4);
+  // counter, with whoever runs the place behind it
+  rb(-4.3, 1.6, 0, 1.02, 6.2, 7.0, PAL.front, 1, true); rb(-4.4, 1.7, 1.02, 1.09, 6.1, 7.1, PAL.top, 1.15);
+  rb(0.5, 1.2, 1.09, 1.42, 6.35, 6.85, LC(0x23262b)); rb(0.56, 1.14, 1.3, 1.4, 6.34, 6.36, LC(0x7dffb0), 2.2);   // the till
+  rb(-4.6, 2.2, 2.25, 3.35, RD - 0.07, RD, LC(0x14161b));                                                          // menu board
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) rb(-4.3 + i * 1.65, -4.3 + i * 1.65 + srr(0.7, 1.35), 3.12 - j * 0.24, 3.2 - j * 0.24, RD - 0.09, RD - 0.07, j === 0 ? LC(s.def.col) : LC(0xf2ead8), j === 0 ? 2.2 : 1.3);
+  const stool = (u, w) => { rb(u - 0.05, u + 0.05, 0, 0.62, w - 0.05, w + 0.05, LC(0x2a2c30)); rb(u - 0.2, u + 0.2, 0.62, 0.7, w - 0.2, w + 0.2, PAL.low, 1.1); };
+  const table = (u, w, r = 0.55) => { rb(u - 0.07, u + 0.07, 0, 0.74, w - 0.07, w + 0.07, LC(0x2a2c30), 1, true); rb(u - r, u + r, 0.74, 0.8, w - r, w + r, PAL.top, 1.1); };
+  const goods = (u0, u1, y, w0, w1, n, h = 0.26) => { for (let i = 0; i < n; i++) { const t = i / n, c = [srr(0.15, 1), srr(0.15, 1), srr(0.15, 1)]; rb(u0 + (u1 - u0) * (t + 0.08 / n), u0 + (u1 - u0) * (t + 0.9 / n), y, y + h * srr(0.6, 1), w0 + (w1 - w0) * (t + 0.08 / n), w0 + (w1 - w0) * (t + 0.9 / n), c, 0.95); } };
+  if (T === 'bodega') {
+    for (const u of [3.0]) { rb(u - 0.4, u + 0.4, 0, 1.9, 1.6, 5.4, LC(0x8a8d92), 1, true); for (let l = 0; l < 4; l++) for (const sd of [-1, 1]) for (let i = 0; i < 12; i++) { const w = 1.7 + i * 0.3, c = [srr(0.15, 1), srr(0.15, 1), srr(0.15, 1)]; rb(u + sd * 0.4, u + sd * 0.56, 0.18 + l * 0.45, 0.18 + l * 0.45 + srr(0.18, 0.32), w, w + 0.24, c); } }
+    for (let l = 0; l < 5; l++) { rb(-RW + 0.03, -RW + 0.45, 0.5 + l * 0.52, 0.54 + l * 0.52, 0.8, 5.6, LC(0x9a7b55)); for (let i = 0; i < 16; i++) { const w = 0.9 + i * 0.29, c = [srr(0.15, 1), srr(0.15, 1), srr(0.15, 1)]; rb(-RW + 0.08, -RW + 0.36, 0.54 + l * 0.52, 0.54 + l * 0.52 + srr(0.16, 0.34), w, w + 0.23, c); } }
+    rb(RW - 0.75, RW - 0.03, 0, 2.45, 1.2, 9.6, LC(0x2d3238), 1, true);                                             // the drinks fridge
+    for (let i = 0; i < 5; i++) { rb(RW - 0.79, RW - 0.75, 0.25, 2.3, 1.35 + i * 1.66, 2.85 + i * 1.66, LC(0xbfeaff), 1.7); for (let l = 0; l < 4; l++) for (let j = 0; j < 5; j++) rb(RW - 0.81, RW - 0.79, 0.4 + l * 0.47, 0.66 + l * 0.47, 1.45 + i * 1.66 + j * 0.27, 1.63 + i * 1.66 + j * 0.27, [srr(0.2, 1), srr(0.2, 1), srr(0.2, 1)], 1.3); }
+    goods(-4.1, -2.3, 1.09, 6.25, 6.5, 7, 0.22);
+    // the cat that owns the counter
+    const cat = LC(0xd98a3a); rb(-0.5, 0.05, 1.09, 1.27, 6.4, 6.62, cat); rb(0.0, 0.2, 1.2, 1.4, 6.42, 6.6, cat); rb(0.02, 0.07, 1.4, 1.46, 6.44, 6.48, cat); rb(0.13, 0.18, 1.4, 1.46, 6.44, 6.48, cat); rb(-0.72, -0.5, 1.09, 1.13, 6.56, 6.6, cat);
+    rb(-RW + 0.05, -RW + 0.09, 1.6, 3.1, 6.2, 9.6, LC(0xffd35a), 1.4);                                              // a faded poster wall behind the till
+  } else if (T === 'pizza') {
+    rb(2.6, 5.9, 0, 2.5, 9.3, RD, LC(0x8a4a32), 1, true); rb(3.4, 5.1, 0.95, 1.55, 9.24, 9.3, LC(0xff8a2a), 3.4); rb(3.2, 5.3, 1.55, 1.75, 9.2, 9.3, LC(0x5a2f20)); rb(4.0, 4.5, 2.5, RH, 9.9, 10.4, LC(0x33363a));
+    rb(-3.9, -1.9, 1.09, 1.5, 6.3, 6.9, LC(0xbfe6ff), 1.5); for (let i = 0; i < 3; i++) { rb(-3.8 + i * 0.64, -3.3 + i * 0.64, 1.12, 1.15, 6.35, 6.85, LC(0xe8b04a), 1.2); rb(-3.74 + i * 0.64, -3.36 + i * 0.64, 1.15, 1.16, 6.4, 6.8, LC(0xc92a1e), 1.2); }
+    for (let i = 0; i < 4; i++) rb(-1.3, -0.7, 1.09 + i * 0.06, 1.14 + i * 0.06, 6.3, 6.9, LC(0xe9dcc0), 1 - i * 0.03);     // boxed pies, ready to go
+    for (const [u, w] of [[3.9, 2.4], [3.9, 5.0], [-4.4, 2.6]]) { table(u, w, 0.62); stool(u - 1.05, w); stool(u + 1.05, w); }
+    rb(-RW + 0.04, -RW + 0.08, 1.5, 2.9, 1.2, 4.4, LC(0x1a1c20)); for (let i = 0; i < 3; i++) rb(-RW + 0.08, -RW + 0.1, 1.65 + (i % 2) * 0.55, 2.15 + (i % 2) * 0.55, 1.4 + i * 1.0, 2.2 + i * 1.0, [srr(0.4, 1), srr(0.3, 0.8), srr(0.2, 0.6)], 1.1);
+    rb(-RW + 0.2, RW - 0.2, 3.5, 3.56, RD - 0.12, RD - 0.07, LC(0xff3b2a), 3);
+  } else if (T === 'coffee') {
+    rb(-4.6, 2.2, 0, 0.95, 10.2, RD, LC(0x7a5632), 1, true); rb(-4.7, 2.3, 0.95, 1.0, 10.1, RD, PAL.top, 1.1);
+    rb(-2.6, -1.2, 1.0, 1.52, 10.3, 10.85, LC(0xc8ccd2), 1.1); rb(-2.5, -1.3, 1.52, 1.6, 10.35, 10.8, LC(0x2a2c30)); for (let i = 0; i < 5; i++) rb(-0.6 + i * 0.3, -0.42 + i * 0.3, 1.0, 1.16, 10.4, 10.58, LC(0xf5f2ea), 1.1);
+    rb(-3.9, -2.1, 1.09, 1.48, 6.3, 6.9, LC(0xcdeeff), 1.5); goods(-3.8, -2.2, 1.12, 6.4, 6.8, 6, 0.14);
+    for (const [u, w] of [[3.8, 2.2], [3.8, 4.6], [3.8, 8.6], [-4.6, 2.4]]) { table(u, w, 0.45); stool(u - 0.85, w); stool(u + 0.85, w); rb(u - 0.02, u + 0.02, 2.7, RH, w - 0.02, w + 0.02, LC(0x222428)); rb(u - 0.2, u + 0.2, 2.5, 2.72, w - 0.2, w + 0.2, LC(0xffd9a0), 3.2); }
+    for (const [u, w] of [[-5.8, 0.7], [5.8, 0.7], [5.8, 10.3]]) { rb(u - 0.28, u + 0.28, 0, 0.55, w - 0.28, w + 0.28, LC(0xb9a58a)); for (let i = 0; i < 5; i++) rb(u - srr(0.1, 0.42), u + srr(0.1, 0.42), 0.55 + i * 0.28, 0.9 + i * 0.28, w - srr(0.1, 0.42), w + srr(0.1, 0.42), LC(0x3f8a4a), srr(0.8, 1.15)); }
+    for (const [du, dy, r] of [[0, 0, 0.5], [-0.55, -0.12, 0.36], [0.6, -0.1, 0.4], [0.2, 0.26, 0.34]]) rb(3.9 + du - r, 3.9 + du + r, 2.3 + dy - r * 0.6, 2.3 + dy + r * 0.6, RD - 0.1, RD - 0.03, LC(0xffffff), 1.5);   // the cloud on the wall
+  } else {
+    for (const sd of [-1, 1]) { rb(sd * (RW - 0.85), sd * (RW - 0.05), 0, 0.95, 1.4, 5.6, LC(0x2b2f45), 1, true); rb(sd * (RW - 0.9), sd * RW, 0.95, 1.3, 1.35, 5.65, LC(0xbfd8ff), 1.5); for (let i = 0; i < 6; i++) { const w = 1.6 + i * 0.68; rb(sd * (RW - 0.62), sd * (RW - 0.3), 1.0, 1.2, w, w + 0.36, LC(0x16181c)); rb(sd * (RW - 0.74), sd * (RW - 0.62), 1.03, 1.17, w + 0.1, w + 0.26, LC(0x3a4252), 1.4); } }
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) { const w = 6.4 + i * 0.9, y = 1.45 + j * 0.95; rb(RW - 0.07, RW - 0.03, y, y + 0.75, w, w + 0.7, LC(0xf2f2f2), 1.2); rb(RW - 0.09, RW - 0.07, y + 0.06, y + 0.69, w + 0.06, w + 0.64, [srr(0.15, 1), srr(0.15, 0.9), srr(0.25, 1)], 1.25); }
+    rb(-4.6, 2.2, 0, 0.95, 10.2, RD, LC(0x2b2f45), 1, true); rb(-3.6, -1.6, 0.95, 1.55, 10.25, 10.9, LC(0xeceef2), 1.1); rb(-3.4, -1.8, 1.2, 1.24, 9.7, 10.25, LC(0xffffff), 1.6); rb(-3.3, -1.9, 1.24, 1.25, 9.75, 10.2, LC(0xff9a4a), 1.3);
+    rb(-5.4, -5.34, 0, 1.5, 8.9, 8.96, LC(0x1a1c20)); rb(-5.0, -4.94, 0, 1.5, 9.5, 9.56, LC(0x1a1c20)); rb(-5.75, -5.69, 0, 1.5, 9.5, 9.56, LC(0x1a1c20)); rb(-5.55, -5.15, 1.5, 1.78, 9.1, 9.5, LC(0x16181c)); rb(-5.45, -5.25, 1.55, 1.73, 8.9, 9.1, LC(0x3a4252), 1.5);
+    rb(-RW + 0.2, RW - 0.2, 3.5, 3.56, RD - 0.12, RD - 0.07, LC(0xb58cff), 3); rb(-RW + 0.04, -RW + 0.07, 3.5, 3.56, 0.2, RD - 0.2, LC(0xb58cff), 3);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.p, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(B.c, 3));
+  const room = new THREE.Group(), mesh = new THREE.Mesh(g, roomMat); room.add(mesh); room.visible = false; scene.add(room);
+  // people
+  const fig = (shirt, pants, skin, hair, u, w, face) => { const m = makeFigure(shirt, pants, skin, hair, 0.5); m.position.set(X(u), F0, Z(w)); m.rotation.y = face; m.userData.y0 = face; room.add(m); return m; };
+  const out = d > 0 ? Math.PI : 0;                                    // facing the street door
+  s.keeper = fig(s.def.shirt, s.def.pants, s.def.skin, s.def.hair, -1.2, 8.0, out);
+  s.folk = [];
+  if (T === 'pizza') s.folk.push(fig([0.2, 0.35, 0.7], [0.16, 0.16, 0.2], 0.6, 0.1, 3.9, 3.6, out + 2.2), fig([0.75, 0.6, 0.2], [0.2, 0.22, 0.3], 0.15, 0.5, -4.4, 3.7, out + 1.2));
+  if (T === 'coffee') s.folk.push(fig([0.8, 0.8, 0.82], [0.14, 0.2, 0.3], 0.4, 0.3, 3.8, 3.4, out - 1.4), fig([0.6, 0.2, 0.3], [0.1, 0.1, 0.12], 0.8, 0.0, 0.6, 9.3, out + 0.6));
+  if (T === 'bodega') s.folk.push(fig([0.3, 0.5, 0.35], [0.3, 0.28, 0.24], 0.25, 0.7, 2.0, 3.4, out - 1.57));
+  if (T === 'optics') s.folk.push(fig([0.85, 0.5, 0.2], [0.12, 0.14, 0.2], 0.5, 0.15, 4.6, 7.2, out - 1.57));
+  s.room = room;
+}
+function buildDoor(s) {
+  const g = new THREE.Group(); g.position.set(s.x, 0.25, s.z); g.rotation.y = s.nz > 0 ? 0 : Math.PI; scene.add(g);
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  add(new THREE.BoxGeometry(3.7, 3.35, 0.36), doorFrame, 0, 1.675, 0.1);
+  add(new THREE.PlaneGeometry(2.7, 2.75), new THREE.MeshBasicMaterial({ color: new THREE.Color(s.def.col).lerp(new THREE.Color(0xfff2d8), 0.72) }), 0, 1.42, 0.285);
+  s.leaf = [add(new THREE.BoxGeometry(1.34, 2.72, 0.05), doorGlass, -0.68, 1.42, 0.33), add(new THREE.BoxGeometry(1.34, 2.72, 0.05), doorGlass, 0.68, 1.42, 0.33)];
+  const aw = add(new THREE.BoxGeometry(4.6, 0.1, 1.7), new THREE.MeshLambertMaterial({ color: s.def.col }), 0, 3.55, 1.0); aw.rotation.x = 0.24; aw.castShadow = true;
+  add(new THREE.BoxGeometry(4.6, 0.34, 0.05), new THREE.MeshLambertMaterial({ color: new THREE.Color(s.def.col).multiplyScalar(0.7) }), 0, 3.2, 1.83);
+  add(new THREE.PlaneGeometry(4.5, 0.84), new THREE.MeshBasicMaterial({ map: signTex(s.name, s.css) }), 0, 4.42, 0.3);
+  s.ring = add(new THREE.RingGeometry(0.95, 1.12, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: s.def.col, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }), 0, 0.03, 1.9);
+  s.gem = add(new THREE.OctahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: s.def.col }), 0, 6.3, 0.9); s.gem.scale.set(0.42, 0.7, 0.42);
+}
+const SHOPS = world.shops.map((w) => { const def = SHOPDEF[w.type], s = { name: w.name, type: w.type, x: w.x, z: w.z, nz: w.nz, d: -w.nz, def, css: '#' + new THREE.Color(def.col).getHexString(), open: 0, chat: 0, tipped: false }; buildDoor(s); buildRoom(s); return s; });
+const shopOf = (type) => SHOPS.find((s) => s.type === type);
+let shopIn = null;
+const wipeEl = document.getElementById('wipe'), transit = { on: false, t: 0, half: false, fn: null };
+function startTransit(fn) { transit.on = true; transit.t = 0; transit.half = false; transit.fn = fn; wipeEl.classList.add('on'); }
+function placeHero(x, y, z, yaw) {
+  P.pos.set(x, y, z); P.prev.copy(P.pos); P.rpos.copy(P.pos); P.vel.set(0, 0, 0); P.state = 'ground'; P.trick = null; P.zip = null; P.landT = P.rollT = P.skimT = P.launchT = 0;
+  C.yaw = C.yawT = yaw; C.pitch = C.pitchT = -0.06; C.cine = 0; resetCam(); P.facing.set(Math.sin(yaw), 0, Math.cos(yaw)); P.fy = yaw;
+}
+function enterShop(s) {
+  P.facing.set(0, 0, -s.nz); P.fy = Math.atan2(0, -s.nz);
+  tone('sine', 1320, 1320, 0.5, 0.12, { send: 0.4 }); tone('sine', 1760, 1760, 0.7, 0.1, { delay: 0.16, send: 0.4 });
+  startTransit(() => { shopIn = s; s.room.visible = true; s.tipped = false; placeHero(s.x, F0 + HY + 0.02, s.z + s.d * 3.1, s.d > 0 ? 0 : Math.PI); flash(s.name); });
+}
+function exitShop() {
+  const s = shopIn; if (!s) return;
+  startTransit(() => { shopIn = null; s.room.visible = false; placeHero(s.x, 0.25 + HY + 0.05, s.z + s.nz * 2.3, s.nz > 0 ? 0 : Math.PI); life.refresh(); storyOnExit(s); });
+}
+function leaveShopNow() { if (shopIn) { shopIn.room.visible = false; shopIn = null; } transit.on = false; wipeEl.classList.remove('on'); closeDlg(); }
+
+// ---------------------------------------------------------------- talking: a line at a time, typed out
+const dlg = { on: false, lines: [], i: 0, shown: 0, after: null }, dlgEl = document.getElementById('dlg');
+function say(lines, after) { dlg.on = true; dlg.lines = lines; dlg.i = 0; dlg.shown = 0; dlg.after = after || null; dlgEl.classList.add('show'); document.getElementById('dname').textContent = lines[0][0]; document.getElementById('dtext').textContent = ''; }
+function closeDlg() { dlg.on = false; dlgEl.classList.remove('show'); }
+function advanceDlg() {
+  if (!dlg.on) return;
+  const L = dlg.lines[dlg.i];
+  if (dlg.shown < L[1].length) { dlg.shown = L[1].length; document.getElementById('dtext').textContent = L[1]; return; }
+  if (++dlg.i >= dlg.lines.length) { const f = dlg.after; closeDlg(); if (f) f(); return; }
+  dlg.shown = 0; document.getElementById('dname').textContent = dlg.lines[dlg.i][0]; document.getElementById('dtext').textContent = '';
+}
+
+// ---------------------------------------------------------------- LAST ORDERS: a short story told across the shops
+const QTEXT = ['Meet Mara at the CORNER BODEGA', 'Pick up the pizzas at BOROUGH SLICE', 'Get the pizzas to Dex at the park fountain while they are hot', 'Take a skyline photo from the crown of the great Midtown tower', 'Print the photo at PIXEL OPTICS', 'Pick up the coffees at KUMO COFFEE', 'Bring it all back to Mara at the bodega', 'Story complete'];
+const QUEST = { step: 0, timer: 0, timing: false, at: new V3(), mark: false, gold: false, trim: false, doneT: 0 };
+try { const o = JSON.parse(localStorage.getItem('skythread-story') || '{}') || {}; QUEST.step = clamp(o.step | 0, 0, 7); QUEST.gold = !!o.gold; QUEST.trim = !!o.trim && QUEST.gold; if (QUEST.step === 2) QUEST.step = 1; } catch (_) {}
+function saveStory() { try { localStorage.setItem('skythread-story', JSON.stringify({ step: QUEST.step, gold: QUEST.gold, trim: QUEST.trim })); } catch (_) {} }
+function setTrim() { M.glow.emissive.set(QUEST.trim ? 0xffc23d : 0x2ef2ff); M.glow.color.set(QUEST.trim ? 0x30220a : 0x062a30); }
+function toggleTrim() { if (!QUEST.gold || !started) return; QUEST.trim = !QUEST.trim; setTrim(); saveStory(); flash(QUEST.trim ? 'GOLD THREAD' : 'CYAN THREAD'); }
+setTrim();
+const CROWN = [cellX(4), cellZ(13)], DEXP = [FOUNT[0] + 11, FOUNT[1] + 7];
+const dex = makeFigure([0.95, 0.55, 0.12], [0.14, 0.16, 0.24], 0.45, 0.1); dex.position.set(DEXP[0], topAt(DEXP[0], DEXP[1]), DEXP[1]); scene.add(dex);
+{ const tb = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.8), new THREE.MeshLambertMaterial({ color: 0xd8d2c6 })); tb.position.set(DEXP[0] + 1.6, dex.position.y + 0.78, DEXP[1] + 0.4); tb.castShadow = true; scene.add(tb);
+  const lg = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.75, 0.06), new THREE.MeshLambertMaterial({ color: 0x3a3d42 })); lg.position.set(DEXP[0] + 1.6, dex.position.y + 0.375, DEXP[1] + 0.4); scene.add(lg); }
+const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.17), new THREE.MeshStandardMaterial({ color: 0xd9622a, roughness: 0.7 })); bag.position.set(0, 0.1, -0.2); bag.castShadow = true; bag.visible = false; R.chest.add(bag);
+const qbeacon = new THREE.Group();
+{
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 420, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x2ef2ff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  beam.position.y = 210;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.06, 8, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9ff8ff, fog: false }));
+  qbeacon.add(beam, ring); qbeacon.visible = false; scene.add(qbeacon);
+}
+const qEl = document.getElementById('quest'), PROMPT = { label: '', fn: null }, promptEl = document.getElementById('prompt');
+function questShop() { return [shopOf('bodega'), shopOf('pizza'), null, null, shopOf('optics'), shopOf('coffee'), shopOf('bodega')][QUEST.step] || null; }
+function setStep(k) { QUEST.step = k; QUEST.timing = false; saveStory(); if (k < 7) { flash('NEW OBJECTIVE'); tone('sine', 880, 880, 0.14, 0.14, { send: 0.3 }); tone('sine', 1175, 1175, 0.2, 0.14, { delay: 0.11, send: 0.3 }); } }
+function reach(x, y, z) { P.reachT = 0.8; P.reachAt.set(x, y, z); }
+function counterTalk(s) {
+  const k = s.keeper.position, nm = s.def.keeper, qs = questShop() === s, st = QUEST.step;
+  P.facing.set(k.x - P.pos.x, 0, k.z - P.pos.z).normalize(); P.fy = Math.atan2(P.facing.x, P.facing.z);
+  const take = () => { reach(k.x, F0 + 1.2, (k.z + P.pos.z) / 2); tone('triangle', 520, 780, 0.12, 0.12, { send: 0.2 }); };
+  if (qs && st === 0) say([[nm, 'You are the one who keeps swinging past my window. Good. I need fast.'], [nm, 'The block party is tonight and my runner called in sick. Three jobs, all over town.'], [nm, 'First: Borough Slice, down in the Financial District. They are holding pizzas for a man named Dex.']], () => setStep(1));
+  else if (qs && st === 1) say([[nm, 'Mara’s order? Three pies, still bubbling.'], [nm, 'Dex is setting up by the fountain in the park. That is a long way uptown — go before they go cold.']], () => { take(); setStep(2); QUEST.timer = 120; QUEST.timing = true; popTrick('PIZZAS ON BOARD'); });
+  else if (qs && st === 4) say([[nm, 'Shot from the crown? Nobody gets that angle. Printing it banner-size…'], [nm, 'Done. Tell Mara the frame is on the house.']], () => { take(); setStep(5); popTrick('BANNER PRINTED'); });
+  else if (qs && st === 5) say([[nm, 'Two for Mara, extra hot. The lids are on tight — I have seen how you travel.']], () => { take(); setStep(6); popTrick('COFFEE TO GO'); });
+  else if (qs && st === 6) say([[nm, 'Pizzas delivered, banner printed, coffee still hot. A whole day’s work in ten minutes.'], [nm, 'The party is on. Look up tonight — that one is for you.']], () => { take(); finale(); });
+  else say([[nm, s.def.chat[s.chat++ % s.def.chat.length]]], () => { if (!s.tipped) { s.tipped = true; take(); addStyle(150, 'LOCAL REGULAR'); } });
+}
+function dexTalk() {
+  P.facing.set(dex.position.x - P.pos.x, 0, dex.position.z - P.pos.z).normalize(); P.fy = Math.atan2(P.facing.x, P.facing.z);
+  if (QUEST.step === 2) say([['DEX', 'Whoa — did you just drop out of the sky? …And they are still hot. Legend.'], ['DEX', 'Mara wants a skyline shot for the party banner. Best view in town is the crown of the big Midtown tower.']], () => { reach(dex.position.x, dex.position.y + 1.2, dex.position.z); addStyle(1500, 'HOT DELIVERY'); setStep(3); });
+  else say([['DEX', QUEST.step < 2 ? 'Tables are up, speakers are up. All I need now is food.' : 'Go on, I have got this corner covered.']]);
+}
+const shutterEl = document.getElementById('shutter');
+function takePhoto() {
+  shutterEl.classList.remove('snap'); void shutterEl.offsetWidth; shutterEl.classList.add('snap');
+  nz('highpass', 3000, 5000, 0.05, 0.5, {}); nz('highpass', 2500, 4000, 0.06, 0.4, { delay: 0.09 });
+  addStyle(1000, 'SKYLINE SHOT'); setStep(4);
+}
+function storyOnExit(s) { if (QUEST.step === 2 && s.type === 'pizza') flash('GET TO THE FOUNTAIN'); }
+// fireworks for the finale
+const FWN = 1400, fwPos = new Float32Array(FWN * 3), fwVel = new Float32Array(FWN * 3), fwCol = new Float32Array(FWN * 3), fwBase = new Float32Array(FWN * 3), fwLife = new Float32Array(FWN);
+const fwGeo = new THREE.BufferGeometry(); fwGeo.setAttribute('position', new THREE.BufferAttribute(fwPos, 3)); fwGeo.setAttribute('color', new THREE.BufferAttribute(fwCol, 3));
+const fwPts = new THREE.Points(fwGeo, new THREE.PointsMaterial({ size: 3.2, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })); fwPts.frustumCulled = false; fwPts.visible = false; scene.add(fwPts);
+const FW = { t: 0, next: 0, head: 0 };
+function burst() {
+  const a = Math.random() * TAU, r = 60 + Math.random() * 150, cx = P.pos.x + Math.sin(a) * r, cy = Math.max(P.pos.y, 40) + 70 + Math.random() * 90, cz = P.pos.z + Math.cos(a) * r, c = new THREE.Color().setHSL(Math.random(), 1, 0.6), sp = 16 + Math.random() * 14;
+  for (let i = 0; i < 110; i++) {
+    const k = FW.head = (FW.head + 1) % FWN, u = Math.random() * 2 - 1, ph = Math.random() * TAU, s = Math.sqrt(1 - u * u), v = sp * (0.75 + Math.random() * 0.3);
+    fwPos[k * 3] = cx; fwPos[k * 3 + 1] = cy; fwPos[k * 3 + 2] = cz; fwVel[k * 3] = s * Math.cos(ph) * v; fwVel[k * 3 + 1] = u * v; fwVel[k * 3 + 2] = s * Math.sin(ph) * v;
+    fwBase[k * 3] = c.r * 3; fwBase[k * 3 + 1] = c.g * 3; fwBase[k * 3 + 2] = c.b * 3; fwLife[k] = 1.5 + Math.random() * 0.9;
+  }
+  thud(0.5); nz('bandpass', 1800, 500, 0.5, 0.25, { q: 0.5, delay: 0.05, send: 0.5 });
+}
+function finale() {
+  QUEST.step = 7; QUEST.gold = true; QUEST.trim = true; QUEST.doneT = 24; saveStory(); setTrim();
+  if (todIdx !== 2) applyTOD(2);
+  addStyle(10000, 'LAST ORDERS'); flash('STORY COMPLETE · GOLD THREAD UNLOCKED');
+  FW.t = 22; FW.next = 2.2; fwPts.visible = true;
+  for (let i = 0; i < 5; i++) tone('sine', [523, 659, 784, 1047, 1319][i], [523, 659, 784, 1047, 1319][i], 0.3, 0.16, { delay: i * 0.1, send: 0.5 });
+}
+function updateFireworks(dt) {
+  if (FW.t <= 0) return;
+  FW.t -= dt; if (FW.t > 3 && !shopIn && (FW.next -= dt) <= 0) { FW.next = 0.35 + Math.random() * 0.7; burst(); }
+  for (let k = 0; k < FWN; k++) {
+    if (fwLife[k] <= 0) { fwCol[k * 3] = fwCol[k * 3 + 1] = fwCol[k * 3 + 2] = 0; continue; }
+    fwLife[k] -= dt; const o = k * 3, dr = Math.exp(-1.6 * dt), f = clamp(fwLife[k] / 1.1, 0, 1);
+    fwVel[o] *= dr; fwVel[o + 1] = fwVel[o + 1] * dr - 7 * dt; fwVel[o + 2] *= dr;
+    fwPos[o] += fwVel[o] * dt; fwPos[o + 1] += fwVel[o + 1] * dt; fwPos[o + 2] += fwVel[o + 2] * dt;
+    fwCol[o] = fwBase[o] * f; fwCol[o + 1] = fwBase[o + 1] * f; fwCol[o + 2] = fwBase[o + 2] * f;
+  }
+  fwGeo.attributes.position.needsUpdate = true; fwGeo.attributes.color.needsUpdate = true;
+  if (FW.t <= 0) fwPts.visible = false;
+}
+function findInteract() {
+  if (dlg.on || transit.on || TR.phase === 'count' || P.state !== 'ground') return null;
+  const p = P.pos;
+  if (shopIn) {
+    const s = shopIn, u = -(p.x - s.x) * s.d, w = (p.z - s.z) * s.d;
+    if (w < 2.2 && Math.abs(u) < 2.0) return ['EXIT TO THE STREET', exitShop];
+    if (w > 3.4 && w < 6.2 && Math.abs(u + 1.2) < 2.8) { const q = questShop() === s, st = QUEST.step; return [q && st === 1 ? 'PICK UP THE PIZZAS' : q && st === 4 ? 'PRINT THE PHOTO' : q && st === 5 ? 'PICK UP THE COFFEES' : 'TALK TO ' + s.def.keeper, () => counterTalk(s)]; }
+    return null;
+  }
+  if (p.y < 4) for (const s of SHOPS) if (Math.hypot(p.x - s.x, p.z - (s.z + s.nz * 1.9)) < 2.9) return ['ENTER ' + s.name, () => enterShop(s)];
+  if (Math.hypot(p.x - dex.position.x, p.z - dex.position.z) < 4 && Math.abs(p.y - HY - dex.position.y) < 2) return [QUEST.step === 2 ? 'HAND OVER THE PIZZAS' : 'TALK TO DEX', dexTalk];
+  if (QUEST.step === 3 && p.y > 362 && Math.hypot(p.x - CROWN[0], p.z - CROWN[1]) < 24) return ['TAKE THE PHOTO', takePhoto];
+  return null;
+}
+function interact() { if (!started || mapOpen || !PROMPT.fn) return false; const f = PROMPT.fn; PROMPT.fn = null; PROMPT.label = ''; promptEl.classList.remove('show'); f(); return true; }
+let storyT = 0;
+function updateStory(dt) {
+  // moving between street and shop
+  if (transit.on) { transit.t += dt; if (!transit.half && transit.t > 0.38) { transit.half = true; transit.fn(); wipeEl.classList.remove('on'); } if (transit.t > 0.8) transit.on = false; }
+  if (dlg.on) { const L = dlg.lines[dlg.i]; if (dlg.shown < L[1].length) { const a = Math.floor(dlg.shown); dlg.shown = Math.min(L[1].length, dlg.shown + dt * 48); if (Math.floor(dlg.shown) !== a) document.getElementById('dtext').textContent = L[1].slice(0, Math.floor(dlg.shown)); } }
+  if (P.reachT > 0) P.reachT -= dt;
+  updateFireworks(dt);
+  // doors slide open as you come up to them; the people inside turn to look
+  for (const s of SHOPS) {
+    const dd = Math.hypot(P.pos.x - s.x, P.pos.z - s.z);
+    if (dd > 420 || shopIn) { s.gem.visible = false; if (!shopIn) continue; } else { s.gem.visible = true; s.gem.rotation.y = time * 1.4; s.gem.position.y = 6.3 + Math.sin(time * 2 + s.x) * 0.25; }
+    if (dd < 60 && !shopIn) { s.open += ((dd < 7.5 && P.pos.y < 6 ? 1 : 0) - s.open) * damp(7, dt); s.leaf[0].position.x = -0.68 - s.open * 1.2; s.leaf[1].position.x = 0.68 + s.open * 1.2; s.ring.material.opacity = 0.5 + Math.sin(time * 4) * 0.3; }
+  }
+  if (shopIn) {
+    const s = shopIn; roomMat.color.setScalar(0.82 / renderer.toneMappingExposure);
+    for (const m of [s.keeper, ...s.folk]) {
+      const dx = P.pos.x - m.position.x, dz = P.pos.z - m.position.z, near = m === s.keeper || dx * dx + dz * dz < 12;
+      m.rotation.y += angDiff(near ? Math.atan2(dx, dz) : m.userData.y0, m.rotation.y) * damp(4, dt);
+      m.position.y = F0 + Math.sin(time * 1.7 + m.position.x) * 0.012;
+    }
+  }
+  dex.rotation.y += angDiff(Math.atan2(P.pos.x - dex.position.x, P.pos.z - dex.position.z), dex.rotation.y) * damp(3, dt);
+  // the hot-pizza clock
+  if (QUEST.timing && QUEST.step === 2 && !dlg.on) { QUEST.timer -= dt; if (QUEST.timer <= 0) { QUEST.timing = false; QUEST.step = 1; saveStory(); popTrick('THE PIZZAS WENT COLD'); flash('PICK UP A FRESH ORDER'); } }
+  if (QUEST.doneT > 0) QUEST.doneT -= dt;
+  if ((storyT -= dt) > 0) return;
+  storyT = 0.08;
+  // where the story wants you next
+  const st = QUEST.step, qs = questShop(), trial = TR.phase !== 'idle';
+  if (st >= 7) QUEST.mark = false;
+  else if (qs) { QUEST.at.set(qs.x, 0.3, qs.z + qs.nz * 1.9); QUEST.mark = shopIn !== qs; }
+  else if (st === 2) { QUEST.at.set(dex.position.x, dex.position.y + 0.1, dex.position.z); QUEST.mark = true; }
+  else { QUEST.at.set(CROWN[0], 372, CROWN[1]); QUEST.mark = true; }
+  qbeacon.visible = QUEST.mark && !trial && !shopIn; if (qbeacon.visible) { qbeacon.position.copy(QUEST.at); qbeacon.children[0].material.opacity = 0.2 * clamp((P.pos.distanceTo(QUEST.at) - 10) / 50, 0.12, 1); qbeacon.children[1].position.y = 0.5 + Math.sin(time * 3) * 0.2; }
+  bag.visible = st === 2 || st === 6;
+  const showQ = !trial && (st < 7 || QUEST.doneT > 0);
+  qEl.classList.toggle('on', showQ);
+  if (showQ) {
+    document.getElementById('qtitle').textContent = st >= 7 ? 'LAST ORDERS · COMPLETE' : 'LAST ORDERS · ' + (st + 1) + ' / 7';
+    document.getElementById('qtext').textContent = st >= 7 ? 'Gold thread unlocked — press K to switch your suit trim' : shopIn && shopIn === qs ? 'Talk to ' + qs.def.keeper + ' at the counter' : QTEXT[st];
+    const dist = Math.round(Math.hypot(P.pos.x - QUEST.at.x, P.pos.z - QUEST.at.z));
+    document.getElementById('qsub').textContent = st >= 7 ? '' : (QUEST.timing ? 'HOT FOR ' + Math.ceil(QUEST.timer) + ' S  ·  ' : '') + (QUEST.mark ? dist + ' M' : '');
+    document.getElementById('qsub').classList.toggle('warn', QUEST.timing && QUEST.timer < 25);
+  }
+  const it = findInteract();
+  if (it) { PROMPT.fn = it[1]; if (PROMPT.label !== it[0]) { PROMPT.label = it[0]; document.getElementById('ptext').textContent = it[0]; } promptEl.classList.add('show'); }
+  else if (PROMPT.fn || PROMPT.label) { PROMPT.fn = null; PROMPT.label = ''; promptEl.classList.remove('show'); }
 }
 
 // ---------------------------------------------------------------- HUD
@@ -1358,7 +1720,7 @@ function drawMini() {
   mctx.beginPath(); mctx.moveTo(0, -9 * u); mctx.lineTo(6.5 * u, 7 * u); mctx.lineTo(0, 3.5 * u); mctx.lineTo(-6.5 * u, 7 * u); mctx.closePath();
   mctx.fillStyle = '#fff'; mctx.strokeStyle = '#0b1220'; mctx.lineWidth = 2 * u; mctx.stroke(); mctx.fill();
   mctx.restore();
-  if (TR.phase !== 'idle') miniGoal(c, k, u);
+  if (TR.phase !== 'idle') miniGoal(c, k, u); else if (QUEST.mark) miniGoal(c, k, u, QUEST.at, '#2ef2ff');
   // north marker rides the rim
   const nx = c + Math.sin(C.yaw) * (c - 11 * u), ny = c - Math.cos(C.yaw) * (c - 11 * u);
   mctx.fillStyle = '#ffb14a'; mctx.font = `700 ${12 * u}px "Barlow Condensed", sans-serif`; mctx.textAlign = 'center'; mctx.textBaseline = 'middle'; mctx.fillText('N', nx, ny);
@@ -1435,11 +1797,14 @@ $('fade').classList.add('out');
     P.rpos.copy(P.prev).lerp(P.pos, clamp(acc / h, 0, 1));
     if (ev.trick) { startTrick(ev.trick); ev.trick = null; }
     updateTrial(dt);
+    try { updateStory(dt); } catch (e) { reportOnce(e); }
   } else { ev.trick = null; if (!started) { time += dt; introStep(dt); } }
   if (!paused || !started) world.update(dt, time, camera.position.x, camera.position.z);
   updateAnim(paused && started ? 0 : dt, time);
   updateCamera(dt, now, time);
-  try { life.update(dt, time, camera.position.x, camera.position.y, camera.position.z, C.yaw, zoneNow === 'CENTRAL PARK' || zoneNow === 'BATTERY PARK'); } catch (e) { reportOnce(e); }
+  mapCamera(Math.min(rawDt, 0.1));
+  const lc = MAPV.k > 0.01 ? P.rpos : camera.position;
+  try { life.update(dt, time, lc.x, shopIn ? 2 : lc.y, lc.z, C.yaw, zoneNow === 'CENTRAL PARK' || zoneNow === 'BATTERY PARK'); } catch (e) { reportOnce(e); }
   if ((zipTick = (zipTick + 1) % 3) === 0) computeZip();
   updateRope(paused ? 0 : dt);
   try { updateHUD(dt, rawDt); } catch (e) { reportOnce(e); }
@@ -1450,7 +1815,7 @@ $('fade').classList.add('out');
   if (envDirty > 0 && --envDirty === 0 && qIdx <= 2) { try { captureEnv(); } catch (e) { reportOnce(e); } }
   if (dbgCam) { if (dbgCam.f) { camera.position.copy(P.rpos).add(dbgCam.p); camera.lookAt(P.rpos.x, P.rpos.y + dbgCam.t.y, P.rpos.z); } else { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); } }
   if (q.sh > 0 && frameNo % q.shEvery === 0) placeSun();
-  if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn; dof.uniforms.uFocus.value = 130 + P.perch * 30; }
+  if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn * (1 - MAPV.k) * (shopIn ? 0 : 1); dof.uniforms.uFocus.value = 130 + P.perch * 30; }
   sky.position.copy(camera.position);
   if (composer) composer.render(); else renderer.render(scene, camera);
 }
@@ -1467,4 +1832,4 @@ function audioDbg() {
   return { state: actx.state, rms: +Math.sqrt(s2 / d.length).toFixed(4), peak: +pk.toFixed(3), carVoices: AU.cars.map((v) => v.id), crowd: life.info.crowd };
 }
 function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
-window.__G = { introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
+window.__G = { storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };

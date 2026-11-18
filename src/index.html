@@ -76,16 +76,18 @@
   #start { padding:4vh 0 3.5vh; }
   #fade { position:fixed; inset:0; background:#05070c; pointer-events:none; opacity:1; transition:opacity 3s ease-in; z-index:20; }
   #fade.out { opacity:0; }
-  /* city map + time trials */
-  #mapview { position:fixed; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(5,8,14,.86); z-index:10; }
-  #mapview.show { display:flex; }
-  .mv-head { width:min(92vw, 1100px); display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; font-size:30px; font-weight:800; font-style:italic; letter-spacing:.06em; }
-  .mv-head span { font-size:14px; font-weight:600; font-style:normal; letter-spacing:.2em; color:rgba(255,255,255,.7); cursor:pointer; padding:4px 12px; border:1px solid var(--line); }
-  .mv-body { display:flex; gap:22px; align-items:stretch; max-width:94vw; }
-  #bigmap { border:1px solid var(--line); box-shadow:0 10px 40px rgba(0,0,0,.6); }
-  #trials { width:min(340px, 34vw); display:flex; flex-direction:column; gap:10px; max-height:82vh; overflow-y:auto; }
-  #trials::before { content:"TIME TRIALS"; font-size:13px; font-weight:600; letter-spacing:.26em; color:rgba(255,255,255,.62); }
-  .tcard { padding:10px 14px 11px; background:rgba(255,255,255,.05); border:1px solid var(--line); border-left:3px solid var(--am); cursor:pointer; transition:background .12s, transform .12s; }
+  /* city map + time trials: an overlay on the live bird's-eye view */
+  #mapview { position:fixed; inset:0; display:none; z-index:10; background:radial-gradient(ellipse at 42% 50%, transparent 58%, rgba(4,6,12,.62) 100%); }
+  #mapview.show { display:block; }
+  #mapfx { position:absolute; inset:0; width:100%; height:100%; cursor:grab; }
+  #mapfx:active { cursor:grabbing; }
+  .mv-head { position:absolute; left:28px; top:20px; font-size:34px; font-weight:800; font-style:italic; letter-spacing:.06em; text-shadow:0 2px 14px rgba(0,0,0,.7); pointer-events:none; }
+  .mv-head small { display:block; margin-top:2px; font-size:12px; font-weight:600; font-style:normal; letter-spacing:.24em; color:rgba(255,255,255,.7); }
+  #mapclose { position:absolute; right:26px; top:24px; font-size:13px; font-weight:600; letter-spacing:.2em; color:rgba(255,255,255,.8); cursor:pointer; padding:5px 12px; border:1px solid var(--line); background:var(--ink); }
+  #trials { position:absolute; right:26px; top:70px; width:min(318px, 34vw); display:flex; flex-direction:column; gap:8px; max-height:calc(100vh - 96px); overflow-y:auto; }
+  #trials::before { content:"TIME TRIALS · CLICK ONE TO SEE ITS ROUTE"; font-size:12px; font-weight:600; letter-spacing:.2em; color:rgba(255,255,255,.7); text-shadow:0 1px 6px rgba(0,0,0,.8); }
+  body.mapping .hud, body.mapping #reticle, body.mapping #help, body.mapping #prompt { opacity:0 !important; }
+  .tcard { padding:9px 14px 10px; background:rgba(8,12,20,.72); backdrop-filter:blur(6px); border:1px solid var(--line); border-left:3px solid var(--am); cursor:pointer; transition:background .12s, transform .12s; }
   .tcard:hover { background:rgba(46,242,255,.13); transform:translateX(3px); }
   .tcard .tn { font-size:22px; font-weight:800; font-style:italic; letter-spacing:.03em; }
   .tcard .tn b { display:inline-block; width:22px; height:22px; margin-right:9px; border-radius:50%; background:var(--cy); color:#06121a; font-size:14px; font-style:normal; line-height:22px; text-align:center; vertical-align:3px; }
@@ -93,6 +95,29 @@
   .tcard .tm { display:flex; gap:10px; font-size:12px; font-weight:600; letter-spacing:.12em; color:rgba(255,255,255,.6); }
   .tcard .tbest { margin-top:5px; font-size:13px; font-weight:700; letter-spacing:.16em; color:var(--am); }
   .tcard.quit { border-left-color:#ff5a5a; }
+  .tcard.sel { background:rgba(46,242,255,.16); border-color:rgba(46,242,255,.6); border-left-color:var(--cy); }
+  .tcard.story { border-left-color:var(--cy); margin-top:6px; cursor:default; }
+  .tcard .go { margin-top:8px; padding:6px 0; text-align:center; font-size:17px; font-weight:800; font-style:italic; letter-spacing:.16em; color:#06121a; background:var(--am); }
+  /* story: objective, prompt, dialogue */
+  #quest { top:108px; left:24px; max-width:330px; padding:7px 16px 8px 12px; background:linear-gradient(90deg, var(--ink), rgba(8,12,20,0)); border-left:3px solid var(--am); display:none; }
+  #quest.on { display:block; }
+  #qtitle { font-size:12px; font-weight:700; letter-spacing:.26em; color:var(--am); }
+  #qtext { font-size:18px; font-weight:600; line-height:1.15; margin:2px 0; text-shadow:0 1px 6px rgba(0,0,0,.6); }
+  #qsub { font-size:13px; font-weight:700; letter-spacing:.16em; color:var(--cy); }
+  #qsub.warn { color:#ff6a4a; }
+  #prompt { position:fixed; left:50%; top:66%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; padding:7px 16px 7px 8px; background:var(--ink); border:1px solid var(--line); font-size:17px; font-weight:700; letter-spacing:.14em; opacity:0; pointer-events:none; transition:opacity .15s; white-space:nowrap; }
+  #prompt.show { opacity:1; }
+  #prompt b { display:inline-block; width:28px; height:28px; line-height:28px; text-align:center; border-radius:5px; background:var(--cy); color:#06121a; font-weight:800; }
+  #dlg { position:fixed; left:50%; bottom:9vh; transform:translateX(-50%); width:min(720px, 90vw); padding:14px 22px 16px; background:rgba(8,12,20,.86); border:1px solid var(--line); border-top:2px solid var(--cy); display:none; z-index:6; }
+  #dlg.show { display:block; }
+  #dname { font-size:13px; font-weight:700; letter-spacing:.3em; color:var(--cy); margin-bottom:4px; }
+  #dtext { font-size:23px; font-weight:500; line-height:1.25; min-height:58px; }
+  #dnext { position:absolute; right:14px; bottom:8px; font-size:12px; font-weight:700; letter-spacing:.2em; color:rgba(255,255,255,.6); }
+  #wipe { position:fixed; inset:0; background:#05070c; opacity:0; pointer-events:none; transition:opacity .34s ease; z-index:15; }
+  #wipe.on { opacity:1; }
+  #shutter { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:15; }
+  #shutter.snap { animation:snap .7s ease-out forwards; }
+  @keyframes snap { 0% { opacity:0; } 8% { opacity:.95; } 100% { opacity:0; } }
   #trialhud { top:66px; left:50%; transform:translateX(-50%); text-align:center; padding:6px 26px 8px; background:var(--ink); border:1px solid var(--line); border-top:2px solid var(--am); display:none; }
   #trialhud.on { display:block; }
   #tname { font-size:13px; font-weight:700; letter-spacing:.28em; color:var(--am); }
@@ -141,12 +166,20 @@
   <div><b>T</b>time of day</div>
   <div><b>G</b>graphics · <b>N</b>mute · <b>H</b>hide this</div>
   <div><b>M</b>map + time trials · <b>X</b>restart</div>
+  <div><b>E</b>on foot: enter shops · talk</div>
 </div>
 <div id="trialhud" class="hud"><div id="tname"></div><div id="ttime">0.00</div><div id="tinfo"></div></div>
+<div id="quest" class="hud"><div id="qtitle"></div><div id="qtext"></div><div id="qsub"></div></div>
+<div id="prompt"><b>E</b><span id="ptext"></span></div>
+<div id="dlg"><div id="dname"></div><div id="dtext"></div><div id="dnext">E · NEXT</div></div>
 <div id="mapview">
-  <div class="mv-head">CITY MAP<span id="mapclose">M / ESC · CLOSE</span></div>
-  <div class="mv-body"><canvas id="bigmap"></canvas><div id="trials"></div></div>
+  <canvas id="mapfx"></canvas>
+  <div class="mv-head">CITY MAP<small>DRAG TO TURN · SCROLL TO ZOOM</small></div>
+  <div id="mapclose">M / ESC · CLOSE</div>
+  <div id="trials"></div>
 </div>
+<div id="wipe"></div>
+<div id="shutter"></div>
 <div id="start" class="overlay">
   <div class="top"><div class="title">SKY<i>THREAD</i></div>
   <div class="thread"></div>
@@ -155,6 +188,7 @@
   <div class="keys">
     <span><b>WASD</b>move</span><span><b>MOUSE</b>look</span><span><b>SPACE / CLICK</b>hold to swing</span>
     <span><b>F</b>slingshot</span><span><b>SHIFT</b>sprint · dive</span><span><b>M</b>map · time trials</span>
+    <span><b>E</b>shops · story</span>
   </div></div>
 </div>
 <div id="fade"></div>

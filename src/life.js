@@ -6,6 +6,7 @@
 //  everybody queues outside the intersections on red.
 // ============================================================================
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BX, BZ, NA, NS, HALFX, HALFZ, SH, CYC, AVE_T0, AVE_GO, ST_T0, ST_GO, cellOK, inPark } from './world.js';
 
 let seed = 77123;
@@ -47,7 +48,7 @@ class CB {
     this.poly(T, col, k, h, limb);
   }
   wheel(cx, cy, cz, r, w) {
-    const s = Math.sign(cx), xo = cx + (s * w) / 2, xi = cx - (s * w) / 2, N = 8, ring = [], hub = [];
+    const s = Math.sign(cx), xo = cx + (s * w) / 2, xi = cx - (s * w) / 2, N = 10, ring = [], hub = [];
     for (let a = 0; a < N; a++) { const t = (a / N) * Math.PI * 2; ring.push([Math.cos(t) * r, Math.sin(t) * r]); hub.push([Math.cos(t) * r * 0.55, Math.sin(t) * r * 0.55]); }
     for (let a = 0; a < N; a++) { const p = ring[a], q = ring[(a + 1) % N]; this.poly([[xi, cy + p[1], cz + p[0]], [xo, cy + p[1], cz + p[0]], [xo, cy + q[1], cz + q[0]], [xi, cy + q[1], cz + q[0]]], TIRE, 0, [cx, cy, cz]); }
     this.poly(ring.map((p) => [xo, cy + p[1], cz + p[0]]), TIRE, 0, [cx, cy, cz]);
@@ -68,52 +69,115 @@ const quadX = (b, x, y0, y1, z0, z1, col, k) => b.poly([[x, y0, z0], [x, y1, z0]
 const quadZ = (b, z, x0, x1, y0, y1, col, k) => b.poly([[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], col, k, [(x0 + x1) / 2, (y0 + y1) / 2, 0]);
 const shadowQuad = (b, hw, f) => b.poly([[-hw - 0.22, 0.03, -f - 0.3], [hw + 0.22, 0.03, -f - 0.3], [hw + 0.22, 0.03, f + 0.3], [-hw - 0.22, 0.03, f + 0.3]], SHADOW, 0, [0, -1, 0]);
 
-// a car body from a side profile: hull, glass cabin, wheels, lamps
+// a smooth-shaded surface swept across the car's width along its side profile: pts = [z, y, halfWidth]
+CB.prototype.sweep = function (pts, cols) {
+  const nrm = pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dz = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dz, dy) || 1; return [dz / l, -dy / l]; });   // [ny, nz]
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], na = nrm[i], nb = nrm[i + 1], [col, k] = cols[i], base = this.p.length / 3;
+    this.p.push(-a[2], a[1], a[0], a[2], a[1], a[0], b[2], b[1], b[0], -b[2], b[1], b[0]);
+    this.n.push(0, na[0], na[1], 0, na[0], na[1], 0, nb[0], nb[1], 0, nb[0], nb[1]);
+    for (let q = 0; q < 4; q++) { this.c.push(col[0], col[1], col[2]); this.k.push(k); this.l.push(0); }
+    this.i.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  }
+};
+const P1 = [PAINT, 1], G0 = [GLASS, 0], D0 = [DARK, 0], PLATE = [0.85, 0.86, 0.82];
+// a car: swept body, glass house with pillars, bumpers, mirrors, wheel arches, shaped lamps
 function bodyCar(o) {
-  const b = new CB(), { L, hw, belt, roof, cb0, cb1, ct0, ct1, thw, hood, trunk, sideGlass = true, sign = false } = o, y0 = 0.3, f = L / 2, hint = [0, 0.6, 0];
-  const prof = [[-f, y0], [-f, trunk], [cb0, belt], [cb1, belt], [f, hood], [f, y0]];
-  for (const s of [-1, 1]) b.poly(prof.map(([z, y]) => [s * hw, y, z]), PAINT, 1, hint);
-  for (let q = 0; q < prof.length - 1; q++) { const [z0, ya] = prof[q], [z1, yb] = prof[q + 1]; b.poly([[-hw, ya, z0], [hw, ya, z0], [hw, yb, z1], [-hw, yb, z1]], PAINT, 1, hint); }
-  const ch = [0, (belt + roof) / 2, (cb0 + cb1) / 2], bw = hw - 0.03;
-  const B0 = [[-bw, belt, cb0], [bw, belt, cb0], [bw, belt, cb1], [-bw, belt, cb1]], T0 = [[-thw, roof, ct0], [thw, roof, ct0], [thw, roof, ct1], [-thw, roof, ct1]];
-  b.poly([B0[3], B0[2], T0[2], T0[3]], GLASS, 0, ch); b.poly([B0[0], B0[1], T0[1], T0[0]], GLASS, 0, ch);
-  b.poly([B0[1], B0[2], T0[2], T0[1]], sideGlass ? GLASS : PAINT, sideGlass ? 0 : 1, ch); b.poly([B0[0], B0[3], T0[3], T0[0]], sideGlass ? GLASS : PAINT, sideGlass ? 0 : 1, ch);
-  b.poly(T0, PAINT, 1, ch);
-  if (sideGlass) for (const s of [-1, 1]) { // a body-colour pillar splits the side glass
-    const zm = (cb0 + cb1) / 2 - 0.1, zt = (ct0 + ct1) / 2 - 0.05;
-    b.poly([[s * (bw + 0.012), belt, zm - 0.07], [s * (bw + 0.012), belt, zm + 0.07], [s * (thw + 0.012), roof, zt + 0.07], [s * (thw + 0.012), roof, zt - 0.07]], PAINT, 1, ch);
-  }
-  for (const s of [-1, 1]) for (const z of [-(f - 0.85), f - 0.85]) b.wheel(s * (hw - 0.1), 0.34, z, 0.34, 0.26);
-  quadZ(b, f + 0.012, -(hw - 0.55), hw - 0.55, y0 + 0.1, hood - 0.1, DARK, 0);
+  const b = new CB(), { L, hw, belt, roof, cb0, cb1, ct0, ct1, thw, hood, trunk, sideGlass = true, sign = false, rails = false } = o, y0 = 0.3, f = L / 2, hint = [0, 0.6, 0], bw = hw - 0.03;
+  b.sweep([[-f + 0.02, y0, hw - 0.08], [-f - 0.02, 0.56, hw - 0.02], [-f + 0.03, trunk, hw - 0.03], [cb0 - 0.3, trunk + 0.035, hw - 0.03], [cb0, belt, bw], [ct0, roof - 0.025, thw], [(ct0 + ct1) / 2, roof, thw], [ct1, roof - 0.03, thw], [cb1, belt, bw], [f - 0.55, hood + 0.025, hw - 0.03], [f - 0.08, hood - 0.07, hw - 0.05], [f + 0.01, 0.54, hw - 0.03], [f - 0.03, y0, hw - 0.09]],
+    [P1, P1, P1, P1, sideGlass ? G0 : P1, P1, P1, G0, P1, P1, P1, P1]);
+  const body = [[-f + 0.02, y0], [-f - 0.02, 0.56], [-f + 0.03, trunk], [cb0 - 0.3, trunk + 0.035], [cb0, belt], [cb1, belt], [f - 0.55, hood + 0.025], [f - 0.08, hood - 0.07], [f + 0.01, 0.54], [f - 0.03, y0]];
   for (const s of [-1, 1]) {
-    quadZ(b, f + 0.014, s * (hw - 0.5), s * (hw - 0.06), hood - 0.24, hood - 0.08, HEAD, 2);
-    quadZ(b, -f - 0.014, s * (hw - 0.5), s * (hw - 0.06), trunk - 0.22, trunk - 0.07, TAIL, 3);
+    b.poly(body.map(([z, y]) => [s * hw, y, z]), PAINT, 1, hint);
+    const B0 = [s * bw, belt, cb0], B1 = [s * bw, belt, cb1], T0 = [s * thw, roof - 0.025, ct0], T1 = [s * thw, roof - 0.03, ct1], ch = [0, (belt + roof) / 2, (cb0 + cb1) / 2];
+    b.poly([B0, B1, T1, T0], sideGlass ? GLASS : PAINT, sideGlass ? 0 : 1, ch);
+    const pil = (t, w) => { const zb = cb0 + (cb1 - cb0) * t, zt = ct0 + (ct1 - ct0) * t, e = s * 0.012; b.poly([[s * bw + e, belt, zb - w], [s * bw + e, belt, zb + w], [s * thw + e, roof - 0.027, zt + w * 0.8], [s * thw + e, roof - 0.027, zt - w * 0.8]], PAINT, 1, ch); };
+    if (sideGlass) { pil(0.02, 0.07); pil(0.47, 0.06); pil(0.98, 0.07); } else pil(0.82, 0.3);
+    b.box(s * (hw + 0.02), s * (hw + 0.02) + s * 0.17, belt + 0.01, belt + 0.14, cb1 - 0.32, cb1 - 0.14, PAINT, 1, 0, true);   // mirror
+    quadX(b, s * (hw + 0.004), y0 + 0.02, belt - 0.03, (cb0 + cb1) / 2 - 0.12, (cb0 + cb1) / 2 - 0.1, DARK, 0);               // door seam
+    quadX(b, s * (hw + 0.006), belt - 0.16, belt - 0.12, (cb0 + cb1) / 2 + 0.25, (cb0 + cb1) / 2 + 0.43, DARK, 0);            // handle
+    for (const z of [-(f - 0.85), f - 0.85]) {
+      const arch = []; for (let a = 0; a <= 8; a++) { const t = (a / 8) * Math.PI; arch.push([s * (hw + 0.006), 0.36 + Math.sin(t) * 0.45, z + Math.cos(t) * 0.45]); }
+      b.poly(arch, TIRE, 0, hint); b.wheel(s * (hw - 0.1), 0.34, z, 0.34, 0.26);
+    }
+    quadZ(b, f + 0.02, s * (hw - 0.52), s * (hw - 0.07), hood - 0.25, hood - 0.1, HEAD, 2); quadZ(b, f + 0.02, s * (hw - 0.3), s * (hw - 0.08), 0.42, 0.48, [1, 0.75, 0.3], 2);
+    quadZ(b, -f - 0.03, s * (hw - 0.5), s * (hw - 0.05), trunk - 0.2, trunk - 0.06, TAIL, 3);
   }
+  b.box(-(hw - 0.02), hw - 0.02, 0.27, 0.5, f - 0.1, f + 0.09, DARK, 0, 0, true); b.box(-(hw - 0.02), hw - 0.02, 0.27, 0.52, -f - 0.1, -f + 0.1, DARK, 0, 0, true);   // bumpers
+  quadZ(b, f + 0.025, -(hw - 0.58), hw - 0.58, 0.52, hood - 0.12, DARK, 0); quadZ(b, f + 0.095, -0.26, 0.26, 0.33, 0.45, PLATE, 0); quadZ(b, -f - 0.105, -0.26, 0.26, 0.56, 0.68, PLATE, 0);
   if (sign) b.box(-0.3, 0.3, roof, roof + 0.17, -0.3, 0.05, [1, 0.88, 0.42], 4);
+  if (rails) for (const s of [-1, 1]) b.box(s * (thw - 0.12) - 0.03, s * (thw - 0.12) + 0.03, roof, roof + 0.07, ct0 + 0.15, ct1 - 0.15, DARK, 0);
   shadowQuad(b, hw, f);
   return b.geo();
 }
 function bodyTruck() {
   const b = new CB(), f = 3.7;
   b.box(-1.05, 1.05, 0.5, 0.9, -f, f, DARK, 0);
-  b.box(-1.1, 1.1, 0.9, 2.55, 1.9, f, PAINT, 1);
-  quadZ(b, f + 0.012, -0.98, 0.98, 1.5, 2.4, GLASS, 0);
-  for (const s of [-1, 1]) quadX(b, s * 1.112, 1.5, 2.35, 2.5, 3.5, GLASS, 0);
+  b.sweep([[1.86, 0.9, 1.1], [1.86, 2.5, 1.1], [3.0, 2.55, 1.1], [3.55, 2.3, 1.08], [f, 1.45, 1.1], [f, 0.9, 1.1]], [P1, P1, P1, G0, P1]);
+  for (const s of [-1, 1]) {
+    b.poly([[s * 1.1, 0.9, 1.86], [s * 1.1, 2.5, 1.86], [s * 1.1, 2.55, 3.0], [s * 1.1, 2.3, 3.55], [s * 1.1, 1.45, f], [s * 1.1, 0.9, f]], PAINT, 1, [0, 1.6, 2.8]);
+    quadX(b, s * 1.112, 1.5, 2.3, 2.45, 3.4, GLASS, 0); b.box(s * 1.14, s * 1.14 + s * 0.2, 1.7, 2.1, 3.3, 3.42, DARK, 0, 0, true);
+    for (const z of [2.75, -1.6, -2.75]) b.wheel(s * 1.02, 0.46, z, 0.46, 0.3);
+    quadZ(b, f + 0.014, s * 0.55, s * 1.0, 0.95, 1.15, HEAD, 2); quadZ(b, -f - 0.014, s * 0.6, s * 1.05, 0.95, 1.15, TAIL, 3);
+    quadX(b, s * 1.232, 1.0, 3.25, -3.6, -3.56, DARK, 0); quadX(b, s * 1.232, 1.0, 3.25, 1.58, 1.62, DARK, 0);
+  }
   b.box(-1.22, 1.22, 0.9, 3.35, -f, 1.72, [0.93, 0.93, 0.9], 0);
-  for (const s of [-1, 1]) { for (const z of [2.75, -1.6, -2.75]) b.wheel(s * 1.02, 0.46, z, 0.46, 0.3); quadZ(b, f + 0.014, s * 0.55, s * 1.0, 0.95, 1.15, HEAD, 2); quadZ(b, -f - 0.014, s * 0.6, s * 1.05, 0.95, 1.15, TAIL, 3); }
+  quadZ(b, -f - 0.012, -1.05, 1.05, 1.05, 3.2, [0.8, 0.8, 0.78], 0); quadZ(b, -f - 0.02, -0.02, 0.02, 1.05, 3.2, DARK, 0);
+  b.box(-1.12, 1.12, 0.45, 0.75, f - 0.06, f + 0.1, DARK, 0, 0, true); quadZ(b, f + 0.012, -0.7, 0.7, 0.95, 1.4, DARK, 0);
   shadowQuad(b, 1.22, f); return b.geo();
 }
 function bodyBus() {
   const b = new CB(), hw = 1.28, f = 6;
-  b.box(-hw, hw, 0.4, 3.1, -f, f, PAINT, 1);
+  b.sweep([[-f, 0.4, hw], [-f, 2.95, hw], [-f + 0.25, 3.12, hw - 0.06], [f - 0.3, 3.12, hw - 0.06], [f - 0.02, 2.9, hw], [f + 0.06, 1.3, hw], [f, 0.4, hw]], [P1, P1, P1, P1, G0, P1]);
   for (const s of [-1, 1]) {
-    quadX(b, s * (hw + 0.012), 1.5, 2.5, -f + 0.5, f - 0.9, GLASS, 0); quadX(b, s * (hw + 0.012), 0.95, 1.2, -f + 0.2, f - 0.2, [0.12, 0.3, 0.62], 0);
-    for (const z of [-3.8, 3.9]) b.wheel(s * (hw - 0.12), 0.5, z, 0.5, 0.3);
-    quadZ(b, f + 0.014, s * 0.6, s * 1.1, 0.7, 0.95, HEAD, 2); quadZ(b, -f - 0.014, s * 0.7, s * 1.15, 0.9, 1.2, TAIL, 3);
+    b.poly([[s * hw, 0.4, -f], [s * hw, 2.95, -f], [s * hw, 3.1, -f + 0.25], [s * hw, 3.1, f - 0.3], [s * hw, 2.9, f - 0.02], [s * hw, 1.3, f + 0.06], [s * hw, 0.4, f]], PAINT, 1, [0, 1.7, 0]);
+    for (let z = -f + 0.6; z < f - 2.2; z += 1.52) quadX(b, s * (hw + 0.012), 1.5, 2.55, z, z + 1.36, GLASS, 0);          // a row of separate windows
+    quadX(b, s * (hw + 0.012), 0.92, 1.18, -f + 0.2, f - 0.2, [0.12, 0.3, 0.62], 0);
+    if (s < 0) for (const z of [f - 2.0, -0.6]) { quadX(b, s * (hw + 0.014), 0.5, 2.6, z, z + 0.62, [0.07, 0.09, 0.12], 0); quadX(b, s * (hw + 0.014), 0.5, 2.6, z + 0.68, z + 1.3, [0.07, 0.09, 0.12], 0); }   // doors on the kerb side
+    else quadX(b, s * (hw + 0.012), 1.5, 2.55, f - 2.1, f - 0.75, GLASS, 0);
+    for (const z of [-3.8, 3.9]) { const arch = []; for (let a = 0; a <= 8; a++) { const t = (a / 8) * Math.PI; arch.push([s * (hw + 0.006), 0.5 + Math.sin(t) * 0.62, z + Math.cos(t) * 0.62]); } b.poly(arch, TIRE, 0, [0, 1, 0]); b.wheel(s * (hw - 0.12), 0.5, z, 0.5, 0.3); }
+    quadZ(b, f + 0.075, s * 0.6, s * 1.1, 0.7, 0.95, HEAD, 2); quadZ(b, -f - 0.014, s * 0.7, s * 1.15, 0.9, 1.2, TAIL, 3);
+    b.box(s * (hw + 0.02), s * (hw + 0.02) + s * 0.3, 2.3, 2.75, f - 0.2, f - 0.08, [0.9, 0.75, 0.1], 0, 0, true);    // mirror
   }
-  quadZ(b, f + 0.012, -(hw - 0.12), hw - 0.12, 1.25, 2.6, GLASS, 0); quadZ(b, f + 0.012, -0.9, 0.9, 2.68, 2.98, [1, 0.62, 0.18], 4);
-  quadZ(b, -f - 0.012, -(hw - 0.2), hw - 0.2, 1.7, 2.6, GLASS, 0);
+  quadZ(b, f + 0.07, -0.9, 0.9, 2.62, 2.9, [1, 0.62, 0.18], 4);
+  quadZ(b, -f - 0.012, -(hw - 0.2), hw - 0.2, 1.7, 2.6, GLASS, 0); quadZ(b, -f - 0.012, -0.9, 0.9, 0.6, 1.4, DARK, 0);
+  b.box(-0.9, 0.9, 3.12, 3.42, -2.6, 1.2, [0.8, 0.8, 0.8], 0); b.box(-(hw - 0.03), hw - 0.03, 0.36, 0.62, f - 0.02, f + 0.14, DARK, 0, 0, true);
   shadowQuad(b, hw, f); return b.geo();
+}
+// a rounded walker for close range (the simple one is kept for the distance)
+function tagGeo(g, col, k, limb) {
+  g = g.index ? g.toNonIndexed() : g; g.deleteAttribute('uv');
+  const n = g.attributes.position.count, c = new Float32Array(n * 3), kk = new Float32Array(n).fill(k), ll = new Float32Array(n).fill(limb);
+  for (let i = 0; i < n; i++) c.set(col, i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aK', new THREE.BufferAttribute(kk, 1)); g.setAttribute('aL', new THREE.BufferAttribute(ll, 1));
+  return g;
+}
+function bodyPedHi(shadow = true) {
+  const W = [1, 1, 1], parts = [], ico = (d) => new THREE.IcosahedronGeometry(1, d);
+  for (const s of [-1, 1]) {
+    const limb = s < 0 ? 1 : 2;
+    parts.push(tagGeo(new THREE.CylinderGeometry(0.08, 0.05, 0.86, 7, 1).translate(s * 0.092, 0.5, 0), W, 2, limb));
+    parts.push(tagGeo(ico(0).scale(0.062, 0.05, 0.135).translate(s * 0.092, 0.05, 0.045), [0.07, 0.07, 0.08], 0, limb));
+    parts.push(tagGeo(new THREE.CylinderGeometry(0.053, 0.038, 0.6, 6, 1).translate(s * 0.262, 1.16, 0), W, 1, limb + 2));
+    parts.push(tagGeo(ico(0).scale(0.046, 0.05, 0.046).translate(s * 0.262, 0.83, 0), W, 3, limb + 2));
+  }
+  parts.push(tagGeo(ico(1).scale(0.165, 0.12, 0.115).translate(0, 0.95, 0), W, 2, 0));
+  parts.push(tagGeo(new THREE.CylinderGeometry(0.178, 0.148, 0.5, 10, 1).scale(1, 1, 0.64).translate(0, 1.2, 0), W, 1, 0));
+  parts.push(tagGeo(ico(1).scale(0.218, 0.1, 0.125).translate(0, 1.43, 0), W, 1, 0));
+  parts.push(tagGeo(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 6, 1).translate(0, 1.53, 0), W, 3, 0));
+  parts.push(tagGeo(ico(1).scale(0.1, 0.125, 0.11).translate(0, 1.68, 0.005), W, 3, 0));
+  parts.push(tagGeo(new THREE.SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI * 0.52).scale(0.107, 0.13, 0.117).translate(0, 1.685, -0.008), W, 4, 0));
+  if (shadow) parts.push(tagGeo(new THREE.PlaneGeometry(0.62, 0.54).rotateX(-Math.PI / 2).translate(0, 0.02, 0), [0.03, 0.03, 0.035], 0, 0));
+  return mergeGeometries(parts);
+}
+// a standing figure as an ordinary mesh (shopkeepers and other people you can talk to)
+export function makeFigure(shirt, pants, skinT = 0.3, hairT = 0.1, lift = 0) {
+  const g = bodyPedHi(false), c = g.attributes.color, k = g.attributes.aK;
+  const skin = [0.94 + (0.4 - 0.94) * skinT, 0.75 + (0.26 - 0.75) * skinT, 0.6 + (0.17 - 0.6) * skinT], hair = [0.07 + 0.48 * hairT, 0.05 + 0.35 * hairT, 0.04 + 0.16 * hairT];
+  for (let i = 0; i < c.count; i++) { const kk = k.getX(i), col = kk > 3.5 ? hair : kk > 2.5 ? skin : kk > 1.5 ? pants : kk > 0.5 ? shirt : null; if (col) c.setXYZ(i, col[0], col[1], col[2]); }
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  if (lift > 0) mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += diffuseColor.rgb * ' + lift.toFixed(2) + ';'); };   // indoor light
+  const m = new THREE.Mesh(g, mat); m.castShadow = true; return m;
 }
 // far cars: a body and a cabin, sized per instance
 function bodyFar() {
@@ -204,18 +268,24 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   else if (aK > 2.5) vColor.rgb = mix(vec3(0.94, 0.75, 0.6), vec3(0.4, 0.26, 0.17), fract(iB.w * 7.31));
   else if (aK > 1.5) vColor.rgb = iD;
   else if (aK > 0.5) vColor.rgb = iC;`).replace('#include <beginnormal_vertex>', `
-  float pper = max(4.0 * (iA.z + iA.w), 0.001);
-  float pdist = iB.x + iB.y * uT;
-  float ps = mod(pdist, pper);
-  float e1 = 2.0 * iA.z, e2 = e1 + 2.0 * iA.w, e3 = e2 + 2.0 * iA.z;
-  vec2 pp; vec2 pd;
-  if (ps < e1) { pp = vec2(-iA.z + ps, -iA.w); pd = vec2(1.0, 0.0); }
-  else if (ps < e2) { pp = vec2(iA.z, -iA.w + ps - e1); pd = vec2(0.0, 1.0); }
-  else if (ps < e3) { pp = vec2(iA.z - (ps - e2), iA.w); pd = vec2(-1.0, 0.0); }
-  else { pp = vec2(-iA.z, iA.w - (ps - e3)); pd = vec2(0.0, -1.0); }
-  float pmv = step(0.01, abs(iB.y));
-  if (iB.y < 0.0) pd = -pd;
-  if (pmv < 0.5) pd = vec2(sin(iB.w * 40.0), cos(iB.w * 40.0));
+  vec2 pp; vec2 pd; float pmv; float pdist;
+  if (iB.y > 50.0) { // crossing a road in step with the signals: over on one cycle, back on the next
+    float xd = iB.y - 50.0, xt = uT - iB.x, xc = floor(xt / ${F(CYC)}), xu = clamp((xt - xc * ${F(CYC)}) / xd, 0.0, 1.0), xo = mod(xc, 2.0);
+    float xf = xo < 0.5 ? xu : 1.0 - xu, xl = length(iA.zw);
+    pp = iA.zw * xf; pd = iA.zw / xl * (xo < 0.5 ? 1.0 : -1.0); pmv = step(0.001, xu) * step(xu, 0.999); pdist = xf * xl;
+  } else { // walking the loop of sidewalk round a block
+    float pper = max(4.0 * (iA.z + iA.w), 0.001);
+    pdist = iB.x + iB.y * uT;
+    float ps = mod(pdist, pper);
+    float e1 = 2.0 * iA.z, e2 = e1 + 2.0 * iA.w, e3 = e2 + 2.0 * iA.z;
+    if (ps < e1) { pp = vec2(-iA.z + ps, -iA.w); pd = vec2(1.0, 0.0); }
+    else if (ps < e2) { pp = vec2(iA.z, -iA.w + ps - e1); pd = vec2(0.0, 1.0); }
+    else if (ps < e3) { pp = vec2(iA.z - (ps - e2), iA.w); pd = vec2(-1.0, 0.0); }
+    else { pp = vec2(-iA.z, iA.w - (ps - e3)); pd = vec2(0.0, -1.0); }
+    pmv = step(0.01, abs(iB.y));
+    if (iB.y < 0.0) pd = -pd;
+    if (pmv < 0.5) pd = vec2(sin(iB.w * 40.0), cos(iB.w * 40.0));
+  }
   vec2 pr = vec2(pd.y, -pd.x);
   float pph = pdist * 4.4 * pmv, psw = sin(pph);
   float pang = 0.0, ppiv = 0.0;
@@ -236,7 +306,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   const TYPES = [
     { geo: bodyCar(SEDAN), cap: 520, dim: [1.85, 1.42, 4.6, 0] },
     { geo: bodyCar({ ...SEDAN, sign: true }), cap: 260, dim: [1.85, 1.42, 4.6, 0] },
-    { geo: bodyCar({ L: 4.85, hw: 0.98, belt: 1.02, roof: 1.74, cb0: -2.32, cb1: 1.05, ct0: -2.12, ct1: 0.55, thw: 0.84, hood: 0.96, trunk: 1.0 }), cap: 340, dim: [1.96, 1.74, 4.85, 0.7] },
+    { geo: bodyCar({ L: 4.85, hw: 0.98, belt: 1.02, roof: 1.74, cb0: -2.32, cb1: 1.05, ct0: -2.12, ct1: 0.55, thw: 0.84, hood: 0.96, trunk: 1.0, rails: true }), cap: 340, dim: [1.96, 1.74, 4.85, 0.7] },
     { geo: bodyCar({ L: 5.4, hw: 1.02, belt: 1.1, roof: 2.1, cb0: -2.66, cb1: 1.75, ct0: -2.6, ct1: 1.35, thw: 0.95, hood: 1.0, trunk: 1.08, sideGlass: false }), cap: 200, dim: [2.04, 2.1, 5.4, 1] },
     { geo: bodyTruck(), cap: 110, dim: [2.44, 3.35, 7.4, 1] },
     { geo: bodyBus(), cap: 90, dim: [2.56, 3.1, 12, 1] },
@@ -253,7 +323,9 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     const c = type === 1 ? TAXI : type === 5 ? pick([[0.9, 0.92, 0.95], [0.2, 0.4, 0.7], [0.85, 0.85, 0.8]]) : type === 3 && rnd() < 0.7 ? VANW : pick(COLS);
     cars.push(cross, s0, sp.a0, sp.a1 - sp.a0, sp.axis, sp.dir, delay, move, type, c[0], c[1], c[2]);
   };
-  const moverType = (axis) => { const r = rnd(); return r < 0.4 ? 0 : r < 0.6 ? 1 : r < 0.78 ? 2 : r < 0.88 ? 3 : r < 0.95 || !axis ? 4 : 5; };
+  const moverType = (axis) => { const r = rnd(); if (!axis) return r < 0.5 ? 0 : r < 0.72 ? 1 : r < 0.9 ? 2 : 3;   // cross streets carry no long vehicles, so people can slip between queued cars
+    return r < 0.36 ? 0 : r < 0.56 ? 1 : r < 0.72 ? 2 : r < 0.81 ? 3 : r < 0.89 ? 4 : 5; };
+  const jay = [];
   for (const sp of world.spans) {
     const blk = sp.axis ? BZ : BX, nb = Math.round((sp.a1 - sp.a0) / blk);
     const slots = sp.axis ? A_SLOTS : S_SLOTS, pitch = sp.axis ? A_PITCH : S_PITCH, front = sp.axis ? A_FRONT : S_FRONT, dly = sp.axis ? A_DELAY : S_DELAY;
@@ -268,9 +340,18 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
       }
       // parked along the curbs
       const sides = sp.lanes.length > (sp.axis ? 2 : 1) ? [-1, 1] : [Math.sign(sp.lanes[0])];
+      const parked = [];
       for (const s of sides) for (let k = 0; k < (sp.axis ? 8 : 21); k++) {
         if (rnd() > (sp.axis ? 0.6 : 0.72)) continue;
+        { const sp0 = b * blk + (sp.axis ? 16 : 22) + k * 6.1; parked.push(sp.a0 + (sp.dir > 0 ? sp0 : sp.a1 - sp.a0 - sp0)); }
         const r = rnd(); addCar(sp, sp.line + s * (sp.axis ? 12.9 : 6.75), b * blk + (sp.axis ? 16 : 22) + k * 6.1, 0, 0, r < 0.55 ? 0 : r < 0.85 ? 2 : 3);
+      }
+      if (!sp.axis && sp.lanes.length === 2) { // mid-block gaps a jaywalker can thread: between two queue slots and clear of every parked car
+        let nj = 0;
+        for (let q = 2; q < S_SLOTS - 2 && nj < 2; q++) {
+          const sg = b * blk + S_FRONT - (q + 0.5) * S_PITCH, gx = sp.a0 + (sp.dir > 0 ? sg : sp.a1 - sp.a0 - sg);
+          if (rnd() < 0.45 && parked.every((px) => Math.abs(px - gx) > 3.1)) { jay.push([gx, sp.line]); nj++; q += 3; }
+        }
       }
     }
   }
@@ -309,9 +390,20 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
       blocks.push({ cx: (R.x0 + R.x1) / 2, cz: (z0 + z1) / 2, ex: (R.x1 - R.x0) / 2, ez: (z1 - z0) / 2, start, count: peds.length / 14 - start });
     }
   }
+  { // people crossing: at every crosswalk when the cross traffic is held, and a few jaywalkers threading the queues mid-block
+    const addX = (ax, az, vx, vz, ts, dur) => { const a = pick(SHIRT), b = pick(PANTS); peds.push(ax, az, vx, vz, ts, 50 + dur, rr(0.9, 1.08), rnd(), a[0], a[1], a[2], b[0], b[1], b[2]); };
+    for (let a = 1; a < NA; a++) for (let r = 1; r < NS; r++) {
+      if (!(cellOK(a - 1, r - 1) && cellOK(a, r - 1) && cellOK(a - 1, r) && cellOK(a, r)) || (inPark(a - 1, r - 1) && inPark(a, r))) continue;
+      const xa = -HALFX + a * BX, zr = -HALFZ + r * BZ, start = peds.length / 14, n = r <= 19 ? 4 : 2;
+      for (const oz of [-10.2, 10.2]) for (let k = 0; k < n; k++) { const d = rnd() < 0.5 ? 1 : -1; addX(xa - d * 14.6, zr + oz + rr(-1.2, 1.2), d * 29.2, 0, AVE_T0 + AVE_GO + 0.6 + rr(0, 2.2), 29.2 / rr(1.5, 1.75)); }
+      for (const ox of [-16.2, 16.2]) for (let k = 0; k < n; k++) { const d = rnd() < 0.5 ? 1 : -1; addX(xa + ox + rr(-1.2, 1.2), zr - d * 8.6, 0, d * 17.2, ST_T0 + ST_GO + 0.6 + rr(0, 4.5), 17.2 / rr(1.45, 1.7)); }
+      blocks.push({ cx: xa, cz: zr, ex: 18, ez: 12, start, count: peds.length / 14 - start });
+    }
+    for (const [gx, line] of jay) { const d = rnd() < 0.5 ? 1 : -1, start = peds.length / 14; addX(gx, line - d * 8.6, 0, d * 17.2, ST_T0 + ST_GO + 0.8 + rr(0, 4), 17.2 / rr(1.5, 1.8)); blocks.push({ cx: gx, cz: line, ex: 2, ez: 9, start, count: 1 }); }
+  }
   const PD = new Float32Array(peds), NPED = peds.length / 14;
-  const PEDCAP = 2800, pedI = instanced(bodyPed(), PEDCAP, 3);
-  { const m = new THREE.Mesh(pedI.g, pedMat); m.frustumCulled = false; m.receiveShadow = true; m.matrixAutoUpdate = false; scene.add(m); }
+  const PEDCAP = 2800, pedI = instanced(bodyPed(), PEDCAP, 3), pedHiI = instanced(bodyPedHi(), 420, 3);
+  for (const I of [pedI, pedHiI]) { const m = new THREE.Mesh(I.g, pedMat); m.frustumCulled = false; m.receiveShadow = true; m.matrixAutoUpdate = false; scene.add(m); }
 
   // ------------------------------------------------------------ birds
   const NBIRD = 45, birdG = new THREE.BufferGeometry();
@@ -328,7 +420,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     const pos = [], ph = [];
-    for (const [x, z] of world.vents) for (let k = 0; k < 4; k++) { pos.push(x, 0.3, z); ph.push(k / 4 + rnd() * 0.2); }
+    for (const [x, z, vy] of world.vents) for (let k = 0; k < 4; k++) { pos.push(x, (vy || 0) + 0.3, z); ph.push(k / 4 + rnd() * 0.2); }
     const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); sg.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
     const sm = new THREE.PointsMaterial({ map: new THREE.CanvasTexture(cv), size: 7, transparent: true, depthWrite: false, opacity: 0.3, color: 0xdfe4ea });
     sm.onBeforeCompile = (sh) => {
@@ -343,15 +435,15 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   }
 
   // ------------------------------------------------------------ drifting motes: dust in the light by day, fireflies in the park at night
-  const MN = 380, mpos = new Float32Array(MN * 3), mseed = new Float32Array(MN);
+  const MN = 820, mpos = new Float32Array(MN * 3), mseed = new Float32Array(MN);
   for (let k = 0; k < MN; k++) { mpos[k * 3] = rnd(); mpos[k * 3 + 1] = rnd(); mpos[k * 3 + 2] = rnd(); mseed[k] = rnd(); }
   const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(mpos, 3)); mg.setAttribute('aS', new THREE.BufferAttribute(mseed, 1));
-  const MU = { uCam: { value: new THREE.Vector3() }, uT: PU.uT, uBox: { value: new THREE.Vector3(56, 30, 56) }, uCol: { value: new THREE.Color(1, 0.85, 0.6) }, uA: { value: 0.2 }, uPx: { value: 60 }, uBlink: { value: 0 } };
+  const MU = { uCam: { value: new THREE.Vector3() }, uT: PU.uT, uBox: { value: new THREE.Vector3(56, 30, 56) }, uCol: { value: new THREE.Color(1, 0.85, 0.6) }, uA: { value: 0.2 }, uPx: { value: 60 }, uBlink: { value: 0 }, uFall: { value: 0 } };
   const motes = new THREE.Points(mg, new THREE.ShaderMaterial({
     uniforms: MU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    vertexShader: `uniform vec3 uCam; uniform vec3 uBox; uniform float uT; uniform float uPx; uniform float uBlink; attribute float aS; varying float vA;
+    vertexShader: `uniform vec3 uCam; uniform vec3 uBox; uniform float uT; uniform float uPx; uniform float uBlink; uniform float uFall; attribute float aS; varying float vA;
       void main() {
-        vec3 w = position * uBox + vec3(sin(uT * 0.21 + aS * 40.0) * 1.5 + uT * 0.35, sin(uT * 0.33 + aS * 71.0) * 0.8, cos(uT * 0.17 + aS * 23.0) * 1.5);
+        vec3 w = position * uBox + vec3(sin(uT * 0.21 + aS * 40.0) * 1.5 + uT * 0.35, sin(uT * 0.33 + aS * 71.0) * 0.8 - uT * uFall * (0.6 + aS), cos(uT * 0.17 + aS * 23.0) * 1.5);
         vec3 rel = mod(w - uCam + uBox * 0.5, uBox) - uBox * 0.5;
         vec4 mv = viewMatrix * vec4(uCam + rel, 1.0);
         gl_Position = projectionMatrix * mv;
@@ -401,25 +493,30 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     order.length = 0;
     for (const b of blocks) { const dx = Math.max(0, Math.abs(b.cx - cx) - b.ex), dz = Math.max(0, Math.abs(b.cz - cz) - b.ez), d2 = dx * dx + dz * dz; if (d2 < R2) { b.d2 = d2; order.push(b); } }
     order.sort((a, b) => a.d2 - b.d2);
-    const A = pedI.arr.A, B = pedI.arr.B, C = pedI.arr.C, D = pedI.arr.D; let n = 0, crowd = 0;
+    let n = 0, crowd = 0; pedI.n = 0; pedHiI.n = 0;
     for (const b of order) {
       for (let i = b.start, e = b.start + b.count; i < e && n < cap; i++) {
-        const o = i * 14, hx = PD[o + 2], hz = PD[o + 3], per = Math.max(4 * (hx + hz), 0.001);
-        let s = (PD[o + 4] + PD[o + 5] * time) % per; if (s < 0) s += per;
-        const e1 = 2 * hx, e2 = e1 + 2 * hz, e3 = e2 + 2 * hx; let x, z;
-        if (s < e1) { x = -hx + s; z = -hz; } else if (s < e2) { x = hx; z = -hz + s - e1; } else if (s < e3) { x = hx - (s - e2); z = hz; } else { x = -hx; z = hz - (s - e3); }
+        const o = i * 14, hx = PD[o + 2], hz = PD[o + 3], sp = PD[o + 5]; let x, z;
+        if (sp > 50) { // a crosser: the same sum the shader does
+          const tt = time - PD[o + 4], c = Math.floor(tt / CYC); let u = (tt - c * CYC) / (sp - 50); u = u < 0 ? 0 : u > 1 ? 1 : u; const f = c % 2 === 0 ? u : 1 - u; x = hx * f; z = hz * f;
+        } else {
+          const per = Math.max(4 * (hx + hz), 0.001); let s = (PD[o + 4] + sp * time) % per; if (s < 0) s += per;
+          const e1 = 2 * hx, e2 = e1 + 2 * hz, e3 = e2 + 2 * hx;
+          if (s < e1) { x = -hx + s; z = -hz; } else if (s < e2) { x = hx; z = -hz + s - e1; } else if (s < e3) { x = hx - (s - e2); z = hz; } else { x = -hx; z = hz - (s - e3); }
+        }
         const dx = PD[o] + x - cx, dz = PD[o + 1] + z - cz, d2 = dx * dx + dz * dz;
         if (d2 > R2) continue;
         if (d2 < 1600) crowd++;
         if (d2 > 4900) { const d = Math.sqrt(d2); if (PD[o + 7] > 1 - (0.75 * (d - 70)) / (R - 70)) continue; if (d2 > al2 && dx * fx + dz * fz < COSW * d) continue; }
         else if (d2 > al2 && dx * fx + dz * fz < COSW * Math.sqrt(d2)) continue;
-        const k4 = n * 4, k3 = n * 3; n++;
+        const I = d2 < 1850 && pedHiI.n < Math.min(pedHiI.cap, Q.pedHi == null ? 420 : Q.pedHi) ? pedHiI : pedI, A = I.arr.A, B = I.arr.B, C = I.arr.C, D = I.arr.D, k = I.n++, k4 = k * 4, k3 = k * 3; n++;
         A[k4] = PD[o]; A[k4 + 1] = PD[o + 1]; A[k4 + 2] = hx; A[k4 + 3] = hz;
-        B[k4] = PD[o + 4]; B[k4 + 1] = PD[o + 5]; B[k4 + 2] = PD[o + 6]; B[k4 + 3] = PD[o + 7];
+        B[k4] = PD[o + 4]; B[k4 + 1] = sp; B[k4 + 2] = PD[o + 6]; B[k4 + 3] = PD[o + 7];
         C[k3] = PD[o + 8]; C[k3 + 1] = PD[o + 9]; C[k3 + 2] = PD[o + 10]; D[k3] = PD[o + 11]; D[k3 + 1] = PD[o + 12]; D[k3 + 2] = PD[o + 13];
       }
     }
-    pedI.n = n; flush(pedI); info.peds = n; info.crowd = crowd;
+    flush(pedI); flush(pedHiI); info.peds = n; info.crowd = crowd;
+
   }
   // where one of the nearest moving cars is right now (for the sound engine)
   function carAt(i, time, out) {
@@ -435,7 +532,8 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   function update(dt, time, cx, cy, cz, yaw, park) {
     MU.uCam.value.set(cx, cy, cz);
     if (nightK > 0.5) { motes.visible = !!park && cy < 60; MU.uCol.value.setRGB(0.8, 1.0, 0.3); MU.uA.value = 0.95; MU.uBlink.value = 1; MU.uPx.value = 90; }
-    else { motes.visible = true; MU.uCol.value.setRGB(1, 0.86, 0.62); MU.uA.value = park ? 0.3 : 0.2; MU.uBlink.value = 0; MU.uPx.value = 55; }
+    else if (park) { motes.visible = true; MU.uCol.value.setRGB(0.95, 0.7, 0.22); MU.uA.value = 0.55; MU.uBlink.value = 0; MU.uPx.value = 120; MU.uFall.value = 0.8; }   // leaves coming down
+    else { motes.visible = true; MU.uCol.value.setRGB(1, 0.86, 0.62); MU.uA.value = 0.22; MU.uBlink.value = 0; MU.uPx.value = 55; MU.uFall.value = 0; }
     CU.uTc.value = time % CYC; CU.uN.value = Math.floor(time / CYC); PU.uT.value = time;
     timer -= dt;
     let dy = yaw - lastYaw; dy = Math.abs(Math.atan2(Math.sin(dy), Math.cos(dy)));

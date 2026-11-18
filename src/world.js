@@ -10,7 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const AVE = 28, ST = 16, WALK = 5;       // avenue width, street width, sidewalk depth
 export const BX = 168, BZ = 76;                 // block pitch incl. roads (blocks are 140 x 60)
-export const NA = 9, NS = 32;                   // blocks across, blocks long
+export const NA = 9, NS = 38;                   // blocks across, blocks long
 export const HALFX = (NA * BX) / 2, HALFZ = (NS * BZ) / 2;
 export const EDGE = 14, SH = 0.25;
 const SHOP_H = 5, TILE = 32;
@@ -42,7 +42,7 @@ function zoneOf(i, j) {
 }
 const ZONE_NAMES = { battery: 'BATTERY PARK', park: 'CENTRAL PARK', fidi: 'FINANCIAL DISTRICT', village: 'THE VILLAGE', midtown: 'MIDTOWN', uws: 'UPPER WEST SIDE', ues: 'UPPER EAST SIDE', uptown: 'HARLEM' };
 const AV_NAMES = ['1 AV', '3 AV', 'PARK AV', '5 AV', '6 AV', '7 AV', '8 AV', '9 AV', '10 AV', '11 AV'];
-const ST_NAMES = ['BATTERY PL', 'WALL ST', 'FULTON ST', 'CHAMBERS ST', 'WORTH ST', 'CANAL ST', 'BROOME ST', 'HOUSTON ST', '4 ST', '8 ST', '14 ST', '18 ST', '23 ST', '28 ST', '34 ST', '42 ST', '47 ST', '50 ST', '57 ST', '59 ST', '65 ST', '72 ST', '79 ST', '86 ST', '91 ST', '96 ST', '103 ST', '110 ST', '116 ST', '125 ST', '135 ST', '145 ST', '155 ST'];
+const ST_NAMES = ['BATTERY PL', 'WALL ST', 'FULTON ST', 'CHAMBERS ST', 'WORTH ST', 'CANAL ST', 'BROOME ST', 'HOUSTON ST', '4 ST', '8 ST', '14 ST', '18 ST', '23 ST', '28 ST', '34 ST', '42 ST', '47 ST', '50 ST', '57 ST', '59 ST', '65 ST', '72 ST', '79 ST', '86 ST', '91 ST', '96 ST', '103 ST', '110 ST', '116 ST', '125 ST', '135 ST', '145 ST', '155 ST', '165 ST', '175 ST', '181 ST', '190 ST', '200 ST', '207 ST'];
 const LANDS = [];
 export function groundAt(x, z) {
   for (const L of LANDS) if (x > L[0] && x < L[1] && z > L[2] && z < L[3]) return true;
@@ -53,11 +53,14 @@ export function groundAt(x, z) {
 }
 export function zoneAt(x, z) {
   const i = Math.floor((x + HALFX) / BX), j = Math.floor((z + HALFZ) / BZ);
-  if (cellOK(i, j)) return ZONE_NAMES[zoneOf(i, j)];
-  if (x < E0 && x > E1) return 'BROOKLYN';
-  if (x > W0 && x < W1) return 'NEW JERSEY';
+  if (cellOK(i, j)) return j >= 33 ? 'WASHINGTON HEIGHTS' : ZONE_NAMES[zoneOf(i, j)];
+  if (z > HALFZ + EDGE + 150) return 'THE BRONX';
+  if (z < -HALFZ - 300) return 'THE HARBOR';
+  if (x < E0) return z > 0 ? 'QUEENS' : 'BROOKLYN';
+  if (x > W0) return 'NEW JERSEY';
   return '';
 }
+export const cellX = (i) => -HALFX + (i + 0.5) * BX, cellZ = (j) => -HALFZ + (j + 0.5) * BZ;
 export function streetAt(x, z) {
   const a = Math.round((x + HALFX) / BX), r = Math.round((z + HALFZ) / BZ);
   if (a < 0 || a > NA || r < 0 || r > NS) return '';
@@ -301,7 +304,7 @@ export const boxes = [];
 const CELL = 32, GOFF = 4096;
 const grid = new Map();
 let qStamp = 0;
-function addBox(minX, maxX, minY, maxY, minZ, maxZ, slab = false) {
+export function addBox(minX, maxX, minY, maxY, minZ, maxZ, slab = false) {
   const b = { minX, maxX, minY, maxY, minZ, maxZ, slab, idx: boxes.length, stamp: 0 };
   boxes.push(b);
   const x0 = Math.floor((minX + GOFF) / CELL), x1 = Math.floor((maxX + GOFF) / CELL);
@@ -363,7 +366,8 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   let B = null;
   const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: new GB(true), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), geos: [], trees: [], lamps: [] }));
   const cellB = (i, j) => useB('c' + Math.floor(clampN(i, 0, NA - 1) / 3) + '_' + Math.floor(clampN(j, 0, NS - 1) / 4));
-  const spawnRoof = { x: 0, y: 0, z: 0 };
+  const spawnRoof = { x: 0, y: 0, z: 0 }, shops = [];
+  const SHOPCELLS = { '4,8': ['BOROUGH SLICE', 'pizza'], '3,14': ['KUMO COFFEE', 'coffee'], '2,21': ['PIXEL OPTICS', 'optics'] };
   const bbSpots = [], map = { b: [], slabs: [], feats: [], lands: [], lines: [] };
   const vents = [];
   const sigB = { ag: new GB(), ar: new GB(), sg: new GB(), sr: new GB() };
@@ -399,6 +403,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   }
   function roofStuff(x0, x1, z0, z1, y, h) {
     const w = x1 - x0, d = z1 - z0; if (w < 8 || d < 8) return;
+    if (rnd() < 0.1) vents.push([rr(x0 + 3, x1 - 3), rr(z0 + 3, z1 - 3), y]);   // a plume from the rooftop plant
     const n = 1 + ((rnd() * 4) | 0);
     for (let i = 0; i < n; i++) { const bw = rr(1.6, 4.5), bd = rr(1.6, 4.5), bh = rr(1.0, 2.6); const ux = rr(x0 + 3, x1 - 3), uz = rr(z0 + 3, z1 - 3); box3(bw, bh, bd, ux, y + bh / 2, uz, rnd() < 0.5 ? K.metal : K.dark); addBox(ux - bw / 2, ux + bw / 2, y, y + bh, uz - bd / 2, uz + bd / 2).prop = true; }
     if (rnd() < 0.7) { const sx = rr(x0 + 3, x1 - 3), sz = rr(z0 + 3, z1 - 3); B.flat.box(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4, K.trim); B.flat.box(sx - 0.5, sx + 0.5, y, y + 2.1, sz + 1.4, sz + 1.46, K.door); B.night.box(sx - 0.16, sx + 0.16, y + 2.25, y + 2.42, sz + 1.46, sz + 1.58, [2.4, 1.8, 1.0]); addBox(sx - 1.6, sx + 1.6, y, y + 2.9, sz - 1.4, sz + 1.4).prop = true; }   // stair bulkhead with a door
@@ -602,7 +607,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     if (rnd() < 0.3) { const z = rr(z0 + 12, z1 - 12), s = rnd() < 0.5, x = s ? x0 + 1.2 : x1 - 1.2; F.box(x - 0.75, x + 0.75, SH + 2.45, SH + 2.6, z - 2.1, z + 2.1, K.dark, true); F.box(x + (s ? 0.62 : -0.7), x + (s ? 0.7 : -0.62), SH + 0.3, SH + 2.45, z - 2.0, z + 2.0, K.glass); F.box(x - 0.05, x + 0.05, SH, SH + 2.45, z - 2.05, z - 1.95, K.metal); F.box(x - 0.05, x + 0.05, SH, SH + 2.45, z + 1.95, z + 2.05, K.metal); }   // bus shelter
     if (rnd() < 0.22) { const x = rr(x0 + 10, x1 - 10), z = rnd() < 0.5 ? z0 + 1.3 : z1 - 1.3; F.box(x - 1.3, x + 1.3, SH, SH + 2.5, z - 0.8, z + 0.8, K.green); F.box(x - 1.5, x + 1.5, SH + 2.5, SH + 2.65, z - 1.1, z + 1.1, K.dark, true); }                     // newsstand
     if (rnd() < 0.42) { const sx = rnd() < 0.5, x = sx ? x0 + rr(4, 9) : x1 - rr(4, 9), z = rnd() < 0.5 ? z0 + 1.4 : z1 - 1.4; F.box(x - 0.8, x + 0.8, SH + 0.25, SH + 1.1, z - 0.5, z + 0.5, K.metal, true); F.box(x - 0.03, x + 0.03, SH + 1.1, SH + 2.2, z - 0.03, z + 0.03, K.dark); cone(x, z, SH + 2.1, 1.35, 0.05, 0.55, 8, pick([C3(0xc8372f), C3(0xe0a422), C3(0x2f6fb0), C3(0x2f8a57)])); }   // vendor cart under an umbrella
-    if (rnd() < 0.35) vents.push([rnd() < 0.5 ? x0 - rr(3, 10) : x1 + rr(3, 10), rr(z0 + 6, z1 - 6)]);                                                                                                                                                       // steam vent in the avenue
+    if (rnd() < 0.35) vents.push([rnd() < 0.5 ? x0 - rr(3, 10) : x1 + rr(3, 10), rr(z0 + 6, z1 - 6), 0]);                                                                                                                                                       // steam vent in the avenue
   }
 
   // ---------------------------------------------------------------- lay out every block
@@ -642,14 +647,16 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
       if (j === 10) {
         const cx = (ax0 + ax1) / 2; curTile = TILE;
         tier(13, cx - 21, cx + 21, az0, az1, 0, 108, [1.0, 0.97, 0.9], true, true, ROOFS[1]); fins(cx - 21, cx + 21, az0, az1, SHOP_H + 0.5, 106.6, 7, K.stone);
-        spawnRoof.x = cx; spawnRoof.y = 108; spawnRoof.z = az1;
+        spawnRoof.x = cx; spawnRoof.y = 108; spawnRoof.z = az1; shops.push({ name: 'CORNER BODEGA', type: 'bodega', x: cx, z: az1, nx: 0, nz: 1 });
         fill(ax0, cx - 22, az0, az1, zn, i, j, 20, 44); fill(cx + 22, ax1, az0, az1, zn, i, j, 20, 44);
       } else fill(ax0, ax1, az0, az1, zn, i, j, 16, 34);
       continue;
     }
-    const mk2 = tsq ? null : megaPick(zn);
+    const sk = SHOPCELLS[i + ',' + j];
+    const mk2 = tsq || sk ? null : megaPick(zn);
     if (mk2) { mega(mk2, ax0, ax1, az0, az1); continue; }
     const lots = tsq ? fill(ax0, ax1, az0, az1, zn, i, j, 56, 120) : fill(ax0, ax1, az0, az1, zn, i, j, 0, 0, zn === 'midtown' && j === 18 && i >= 2 && i <= 6);
+    if (sk) { const cm = (ax0 + ax1) / 2, l = lots.find((q) => Math.abs(q.z0 - az0) < 0.1 && q.x0 <= cm && q.x1 >= cm) || lots.find((q) => Math.abs(q.z0 - az0) < 0.1); shops.push({ name: sk[0], type: sk[1], x: (l.x0 + l.x1) / 2, z: az0, nx: 0, nz: -1 }); }
     { // blade signs hung off the shopfronts
       const np = zn === 'midtown' || zn === 'fidi' ? 0.62 : zn === 'village' ? 0.48 : 0.3;
       const sign = (x, z, nx, nz, lh) => {
@@ -703,21 +710,21 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     cone(fx, fz, SH, 5.6, 5.6, 0.7, 14, K.stone); B.flat.disc(fx, fz, 5.1, 5.1, SH + 0.72, 14, K.water); cone(fx, fz, SH, 0.7, 0.5, 2.3, 8, K.stone); cone(fx, fz, SH + 2.2, 0.4, 1.7, 0.5, 10, K.stone); cone(fx, fz, SH + 2.6, 0.22, 0.03, 1.7, 6, C3(0xdfeef5));
     addBox(fx - 5, fx + 5, 0, SH + 0.7, fz - 5, fz + 5).prop = true;
     // lamps and benches along every path; trees everywhere else, split into quarters so they cull with the view
-    const pq = [0, 1, 2, 3].map((q) => buckets['park' + q] || useB('park' + q)); useB('park');
-    const quarter = (z) => pq[clampN(Math.floor(((z - z0) / (z1 - z0)) * 4), 0, 3)];
+    const pq = []; for (let q = 0; q < 12; q++) pq.push(useB('park' + q)); useB('park');
+    const quarter = (z, x = cx) => pq[clampN(Math.floor(((x - x0) / (x1 - x0)) * 3), 0, 2) + 3 * clampN(Math.floor(((z - z0) / (z1 - z0)) * 4), 0, 3)];
     const bench = (x, z, alongX) => { const a = alongX ? 0.9 : 0.25, b2 = alongX ? 0.25 : 0.9; B.flat.box(x - a, x + a, SH + 0.38, SH + 0.46, z - b2, z + b2, K.wood, true); B.flat.box(x - (alongX ? 0.9 : 0.04), x + (alongX ? 0.9 : 0.04), SH + 0.46, SH + 0.95, z - (alongX ? 0.04 : 0.9), z + (alongX ? 0.04 : 0.9), K.green); };
     for (const zc of [z0 + 22, ...hz, z1 - 22]) for (let x = x0 + 34, k = 0; x < x1 - 30; x += 15, k++) {
       if (Math.abs(x - fx) < 15 && zc === fz) continue;
-      if (k % 2 === 0) quarter(zc).lamps.push(k % 4 ? [x, zc + 2.5, 0] : [x, zc - 2.5, Math.PI]); else bench(x, zc + (k % 4 === 1 ? 2.6 : -2.6), true);
+      if (k % 2 === 0) quarter(zc, x).lamps.push(k % 4 ? [x, zc + 2.5, 0] : [x, zc - 2.5, Math.PI]); else bench(x, zc + (k % 4 === 1 ? 2.6 : -2.6), true);
     }
     for (const xc of [x0 + 24, x1 - 24]) for (let z = z0 + 36, k = 0; z < z1 - 32; z += 15, k++) {
-      if (k % 2 === 0) quarter(z).lamps.push(k % 4 ? [xc + 2.5, z, Math.PI / 2] : [xc - 2.5, z, -Math.PI / 2]); else bench(xc + (k % 4 === 1 ? 2.6 : -2.6), z, false);
+      if (k % 2 === 0) quarter(z, xc).lamps.push(k % 4 ? [xc + 2.5, z, Math.PI / 2] : [xc - 2.5, z, -Math.PI / 2]); else bench(xc + (k % 4 === 1 ? 2.6 : -2.6), z, false);
     }
     for (let t = 0, n = 0; n < 2900 && t < 20000; t++) {
       const tx = rr(x0 + 3, x1 - 3), tz = rr(z0 + 3, z1 - 3);
       if (feat.some(([ox, oz, rx, rz]) => ((tx - ox) / rx) ** 2 + ((tz - oz) / rz) ** 2 < 1)) continue;
       if (paths.some(([a, b, c, d]) => tx > a - 1.6 && tx < b + 1.6 && tz > c - 1.6 && tz < d + 1.6)) continue;
-      quarter(tz).trees.push([tx, SH, tz, rr(0.9, 1.85), rnd() < 0.12 ? 1 : 0]); n++;
+      quarter(tz, tx).trees.push([tx, SH, tz, rr(0.9, 1.85), rnd() < 0.12 ? 1 : 0]); n++;
     }
     Object.assign(parkRect, { hz, water: [[cx + 20, z0 + (z1 - z0) * 0.68, 154, 82], [cx - 90, z0 + (z1 - z0) * 0.3, 66, 38], [fx, fz, 7, 7]], fountain: [fx, fz] });
   }
@@ -750,8 +757,8 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     segQ.setFromUnitVectors(ZAX, d.normalize()); segM.compose(new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5), segQ, ONE);
     g.applyMatrix4(segM); B.geos.push(paint(g, col));
   }
-  function bridge(zc, col, cableCol) {
-    const xA = E0 - 8, xB = -(HALFX + EDGE - 2), dy = 17, hw = 11, TH = 84;   // from the east borough to the island
+  function bridge(zc, col, cableCol, xA = E0 - 8, xB = -(HALFX + EDGE - 2)) {
+    const dy = 17, hw = 11, TH = 84;   // from the east borough to the island
     box3(xB - xA, 2.6, hw * 2, (xA + xB) / 2, dy - 1.3, zc, K.dark); addBox(xA, xB, dy - 2.6, dy, zc - hw, zc + hw); map.lines.push([xA, xB, zc - hw, zc + hw, 1]);
     for (const s of [-1, 1]) box3(xB - xA, 1.3, 0.5, (xA + xB) / 2, dy + 0.65, zc + s * (hw - 0.3), col);
     const tx = [xA + (xB - xA) * 0.27, xA + (xB - xA) * 0.73];
@@ -768,7 +775,61 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
       cab(xA + 10, dy + 3, tx[0], top, 8, 6); cab(tx[0], top, tx[1], top, top - dy - 7, 16); cab(tx[1], top, xB - 10, dy + 3, 8, 6);
     }
   }
-  bridge(-HALFZ + 4 * BZ, K.stone, K.metal); bridge(-HALFZ + 8 * BZ, K.steel, K.steel);
+  bridge(-HALFZ + 4 * BZ, K.stone, K.metal); bridge(-HALFZ + 8 * BZ, K.steel, K.steel); bridge(-HALFZ + 22 * BZ, C3(0x8a5a4a), K.metal);
+  bridge(-HALFZ + 34 * BZ, K.metal, K.metal, HALFX + EDGE - 2, W0 + 8);   // the big span to the west shore
+
+  // ---------------------------------------------------------------- the wider region: the city thins out into the haze instead of stopping
+  function suburb(key, x0, x1, z0, z1, pitch, hLo, hHi, hubs) {
+    useB(key); curTile = TILE;
+    box3(x1 - x0, 6, z1 - z0, (x0 + x1) / 2, -3.05, (z0 + z1) / 2, K.land); LANDS.push([x0, x1, z0, z1]); map.lands.push([x0, x1, z0, z1]);
+    for (let gx = x0 + 14; gx < x1 - pitch; gx += pitch) for (let gz = z0 + 14; gz < z1 - pitch; gz += pitch) {
+      if (rnd() < 0.3) continue;
+      const w = rr(pitch * 0.35, pitch * 0.68), d = rr(pitch * 0.35, pitch * 0.68), ox = gx + rr(0, pitch - w - 8), oz = gz + rr(0, pitch - d - 8);
+      let h = rr(hLo, hHi); for (const [hx, hz, hr, hh] of hubs) { const dd = Math.hypot(ox - hx, oz - hz); if (dd < hr) h = Math.max(h, rr(0.4, 1) * hh * (1 - dd / hr)); }
+      h = R4(h); const st = h > 80 ? pick([0, 1, 2, 8, 12]) : pick([4, 5, 6, 7, 10, 11, 14]);
+      tier(st, ox, ox + w, oz, oz + d, 0, h, tintOf(st), false, true, pick(ROOFS));
+      if (rnd() < 0.3) B.trees.push([ox - 4, 0, oz - 4, rr(0.9, 1.5), 0]);
+    }
+  }
+  const ZN = HALFZ + EDGE + 190, FAR = 4300;
+  suburb('east2', -FAR, E1, -2500, ZN - 40, 120, 8, 26, [[-2700, -700, 520, 130]]);
+  suburb('west2', W1, FAR, -2500, ZN - 40, 120, 8, 26, [[2800, 200, 480, 120]]);
+  suburb('north', -FAR, FAR, ZN, ZN + 2500, 104, 8, 30, [[100, ZN + 700, 520, 100], [-1100, ZN + 500, 320, 80]]);
+  suburb('south', -FAR, FAR, -HALFZ - 3700, -HALFZ - 1900, 130, 8, 20, [[-1500, -HALFZ - 2300, 400, 70]]);
+  useB('misc');
+  for (const ax of [2, 6]) { // low bridges over the narrow river at the top of the island
+    const x = -HALFX + ax * BX, za = HALFZ + EDGE - 2, zb = ZN + 4;
+    box3(18, 2.2, zb - za, x, 5.4, (za + zb) / 2, K.dark); addBox(x - 9, x + 9, 4.3, 6.5, za, zb); map.lines.push([x - 9, x + 9, za, zb, 1]);
+    for (const sd of [-1, 1]) for (let z = za + 12; z < zb - 8; z += 24) { box3(1, 9, 1, x + sd * 9, 10, z, K.steel); strut(new THREE.Vector3(x + sd * 9, 14.5, z), new THREE.Vector3(x + sd * 9, 6.5, z + 24), 0.5, K.steel); }
+    for (const z of [za + 50, zb - 50]) { box3(14, 12, 6, x, -1, z, K.stone); }
+  }
+  { // the harbor: a low green island, and a statue on its own rock
+    const hz = -HALFZ - 600, ix = -420;
+    box3(340, 5, 300, ix, -2.4, hz, K.grass); LANDS.push([ix - 170, ix + 170, hz - 150, hz + 150]); map.lands.push([ix - 170, ix + 170, hz - 150, hz + 150]);
+    for (let k = 0; k < 14; k++) { const x = ix + rr(-140, 110), z = hz + rr(-120, 100), w = rr(16, 30), h = R4(rr(8, 18)); tier(pick([4, 5, 10]), x, x + w, z, z + rr(14, 26), 0, h, tintOf(4), false, true, pick(ROOFS)); }
+    for (let k = 0; k < 40; k++) B.trees.push([ix + rr(-160, 160), 0.1, hz + rr(-140, 140), rr(0.9, 1.5), 0]);
+    const sx = 560, sz = -HALFZ - 980;
+    cone(sx, sz, -3, 70, 62, 5.2, 11, K.stone); LANDS.push([sx - 50, sx + 50, sz - 50, sz + 50]); map.feats.push([sx, sz, 62, 62, 1]);
+    for (let k = 0; k < 11; k++) { const a = (k / 11) * Math.PI * 2; B.flat.tri([sx + Math.cos(a) * 30, 8, sz + Math.sin(a) * 30], [sx + Math.cos(a + 0.29) * 46, 2.2, sz + Math.sin(a + 0.29) * 46], [sx + Math.cos(a - 0.29) * 46, 2.2, sz + Math.sin(a - 0.29) * 46], K.stone); }
+    B.flat.box(sx - 30, sx + 30, 2.2, 8, sz - 30, sz + 30, K.stone); addBox(sx - 30, sx + 30, 0, 8, sz - 30, sz + 30);
+    B.flat.box(sx - 9, sx + 9, 8, 34, sz - 9, sz + 9, K.trim); addBox(sx - 9, sx + 9, 8, 34, sz - 9, sz + 9);
+    cone(sx, sz, 34, 5.2, 2.4, 30, 9, K.copper); cone(sx, sz, 64, 2.2, 1.5, 4.4, 8, K.copper); addBox(sx - 3, sx + 3, 34, 68, sz - 3, sz + 3);
+    strut(new THREE.Vector3(sx + 2, 58, sz), new THREE.Vector3(sx + 6.5, 76, sz + 1), 1.5, K.copper); cone(sx + 6.5, sz + 1, 76, 1.3, 0.2, 3.2, 6, C3(0xe8b84a)); beacon(sx + 6.5, 79, sz + 1);
+  }
+  useB('hills'); // a far rim of hills so the horizon is never a ruled line
+  for (let k = 0; k < 44; k++) { const a = (k / 44) * Math.PI * 2 + rr(-0.05, 0.05), R = rr(5200, 6400); if (Math.abs(Math.sin(a)) < 0.25 && Math.cos(a) < 0) continue; cone(Math.cos(a) * R, Math.sin(a) * R * 0.92, -6, rr(700, 1300), rr(120, 380), rr(110, 300), 7, C3(0x46584a)); }
+  useB('boats'); // moored ships and barges on both rivers
+  const ferries = [];
+  for (let k = 0; k < 16; k++) {
+    const west = k % 2 === 0, x = west ? rr(HALFX + 180, W0 - 60) : rr(E0 + 60, -HALFX - 60), z = rr(-HALFZ - 300, HALFZ - 100), L = rr(24, 70), w = L * 0.2, ry = rr(-0.3, 0.3);
+    const hull = new THREE.BoxGeometry(w, 4, L); hull.translate(0, 0, 0); const cab = new THREE.BoxGeometry(w * 0.7, 5, L * 0.22); cab.translate(0, 4.2, -L * 0.3);
+    for (const [g, c] of [[hull, pick([K.dark, C3(0x7a2a22), C3(0x24364a)])], [cab, K.trim]]) { g.rotateY(ry); g.translate(x, -0.8, z); B.geos.push(paint(g, c)); }
+  }
+  for (let k = 0; k < 3; k++) { // ferries that actually cross
+    const g = mergeGeometries([paint(new THREE.BoxGeometry(11, 4, 38), C3(0xe8e4d8)), paint(new THREE.BoxGeometry(9, 3.4, 26).translate(0, 3.6, 0), C3(0xd8862a)), paint(new THREE.BoxGeometry(5, 2.4, 7).translate(0, 6.4, 6), K.trim)]);
+    const m = new THREE.Mesh(g, flatMat); m.position.y = -0.6; scene.add(m);
+    ferries.push({ m, z: -HALFZ + BZ * (3 + k * 11), x0: k === 1 ? HALFX + 60 : -HALFX - 60, x1: k === 1 ? W0 - 50 : E0 + 50, ph: k * 2.1 });
+  }
 
   // traffic signals at every crossing: lamps facing the avenue and the cross street switch with the cycle
   for (let a = 0; a <= NA; a++) for (let r = 0; r <= NS; r++) {
@@ -805,15 +866,25 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   const farCrownG = lobe(2.55, 0.95, 0, 5.1, 0); farCrownG.computeVertexNormals();
   const treeSets = [];
   const swayU = { value: 0 };
-  const crownMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
-  crownMat.onBeforeCompile = (sh) => {
+  // leaves sway in the wind and are darker underneath than on top, which gives the crowns depth
+  const leafPatch = (m) => { m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = swayU;
-    sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+    sh.vertexShader = 'uniform float uTime; varying float vTS;\n' + sh.vertexShader.replace('#include <begin_vertex>',
       `#include <begin_vertex>
       float swf = smoothstep(2.6, 6.5, position.y); float ph = float(gl_InstanceID) * 1.73;
       transformed.x += (sin(uTime * 1.25 + ph) * 0.16 + sin(uTime * 3.1 + ph * 2.0) * 0.045) * swf;
-      transformed.z += (cos(uTime * 1.07 + ph * 1.4) * 0.13 + cos(uTime * 2.7 + ph) * 0.04) * swf;`);
-  };
+      transformed.z += (cos(uTime * 1.07 + ph * 1.4) * 0.13 + cos(uTime * 2.7 + ph) * 0.04) * swf;
+      vTS = mix(0.55, 1.14, smoothstep(2.9, 7.4, position.y));`);
+    sh.fragmentShader = 'varying float vTS;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb *= vTS;');
+  }; return m; };
+  const crownMat = leafPatch(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }));
+  const crownHiMat = leafPatch(new THREE.MeshLambertMaterial({ color: 0xffffff }));
+  crownHiMat.customProgramCacheKey = () => 'leafHi'; crownMat.customProgramCacheKey = () => 'leafLo';
+  // close-up trees: a branching trunk and a crown of many rounded, uneven masses
+  const blob = (r, sy, x, y, z, sd) => { const g = new THREE.IcosahedronGeometry(r, 1); const pa = g.attributes.position; for (let v = 0; v < pa.count; v++) { const px = pa.getX(v), py = pa.getY(v), pz = pa.getZ(v), m = 1 + Math.sin(px * 3.1 + sd) * Math.sin(py * 2.7 + sd * 2.0) * Math.sin(pz * 3.3 + sd * 3.0) * 0.3; pa.setXYZ(v, px * m, py * m * sy, pz * m); } g.translate(x, y, z); g.deleteAttribute('uv'); return g; };
+  const crownHiG = mergeGeometries([blob(1.9, 0.85, 0, 4.6, 0, 1), blob(1.45, 0.85, 1.25, 5.5, 0.5, 2), blob(1.4, 0.8, -1.1, 5.2, -0.6, 3), blob(1.3, 0.85, 0.2, 6.4, -0.3, 4), blob(1.15, 0.8, -0.4, 5.3, 1.2, 5), blob(1.1, 0.8, 0.6, 4.9, -1.25, 6)]); crownHiG.computeVertexNormals();
+  const limb = (r0, r1, len, rz, ry, x, y, z) => new THREE.CylinderGeometry(r1, r0, len, 6, 1, true).translate(0, len / 2, 0).rotateZ(rz).rotateY(ry).translate(x, y, z);
+  const trunkHiG = mergeGeometries([new THREE.CylinderGeometry(0.17, 0.34, 3.2, 8, 2, true).translate(0, 1.6, 0), limb(0.15, 0.06, 2.2, 0.65, 0, 0.05, 2.7, 0), limb(0.14, 0.05, 2.0, -0.6, 1.2, -0.05, 2.9, 0), limb(0.12, 0.05, 1.8, 0.5, 2.6, 0, 3.0, 0.05), limb(0.1, 0.04, 1.6, -0.45, 4.2, 0, 3.1, -0.05)]);
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4b3726, flatShading: true });
   const poleG = mergeGeometries([new THREE.CylinderGeometry(0.09, 0.14, 7.6, 4, 1, true).translate(0, 3.8, 0), new THREE.BoxGeometry(0.12, 0.12, 2.2).translate(0, 7.6, -1.0)]);
   const headG = new THREE.BoxGeometry(0.4, 0.16, 0.8).translate(0, 7.5, -2.0);
@@ -846,7 +917,10 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
       fr.userData.full = T.length; fr.userData.far = true; fr.visible = false; scene.add(fr); treeMeshes.push(fr);
       let sx = 0, sz = 0; for (const t of T) { sx += t[0]; sz += t[2]; } sx /= T.length; sz /= T.length;
       let rad = 0; for (const t of T) rad = Math.max(rad, Math.hypot(t[0] - sx, t[2] - sz));
-      treeSets.push({ near: [tr, cr], far: fr, cx: sx, cz: sz, r: rad, isFar: false });
+      const trh = new THREE.InstancedMesh(trunkHiG, trunkMat, T.length), crh = new THREE.InstancedMesh(crownHiG, crownHiMat, T.length);
+      for (const m of [trh, crh]) { m.instanceMatrix = cr.instanceMatrix; m.castShadow = true; m.receiveShadow = true; m.userData.full = T.length; m.visible = false; scene.add(m); treeMeshes.push(m); }
+      crh.instanceColor = cr.instanceColor;
+      treeSets.push({ near: [tr, cr], hi: [trh, crh], far: fr, cx: sx, cz: sz, r: rad, lod: 1 });
       NT += T.length;
     }
     if (b.lamps.length) {
@@ -952,7 +1026,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     const tf = f >= 1 ? 1 : f > 0.6 ? 0.8 : 0.55;
     for (const m of treeMeshes) { m.count = Math.max(1, Math.round(m.userData.full * tf)); m.castShadow = treeShadows && !m.userData.far; }
   }
-  function setDetail() {}
+  function setDetail(hi) { treeHi = !!hi; }
   function freeTextureData() { facadeU.tAlb.value.image.data = null; facadeU.tRM.value.image.data = null; }   // the GPU has its copy; give the memory back
   function setWindows(win, lit, shop) { facadeU.uWin.value = win; facadeU.uLit.value = lit; facadeU.uShop.value = shop; }
   function setNight(on) { for (const m of nightMeshes) m.visible = on; }
@@ -961,13 +1035,15 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     poolMat.opacity = 0.5 * k; spillMat.opacity = 0.6 * k; haloMat.opacity = Math.min(1, k * 1.2); neonMat.color.setScalar(neon);
   }
   let lastPh = -1;
-  let lodTick = 0;
+  let lodTick = 0, treeHi = true;
   function update(dt, time, cx = 0, cz = 0) {
     swayU.value = time;
-    if (++lodTick % 15 === 0) for (const t of treeSets) {
-      const d = Math.hypot(t.cx - cx, t.cz - cz) - t.r, far = t.isFar ? d > 380 : d > 440;
-      if (far !== t.isFar) { t.isFar = far; t.near[0].visible = t.near[1].visible = !far; t.far.visible = far; }
+    if (++lodTick % 15 === 0) for (const t of treeSets) { // three levels of tree detail by distance
+      const d = Math.hypot(t.cx - cx, t.cz - cz) - t.r;
+      const lod = d > (t.lod === 2 ? 380 : 440) ? 2 : treeHi && d < (t.lod === 0 ? 130 : 100) ? 0 : 1;
+      if (lod !== t.lod) { t.lod = lod; t.hi[0].visible = t.hi[1].visible = lod === 0; t.near[0].visible = t.near[1].visible = lod === 1; t.far.visible = lod === 2; }
     }
+    for (const f of ferries) { const a = time * 0.03 + f.ph; f.m.position.x = f.x0 + (f.x1 - f.x0) * (0.5 + 0.5 * Math.sin(a)); f.m.position.z = f.z; f.m.rotation.y = Math.cos(a) > 0 ? Math.PI / 2 : -Math.PI / 2; }
     waterN.offset.set(time * 0.006, time * 0.0045);
     clouds.position.x = time * 2.2;
     const tc = ((time % CYC) + CYC) % CYC, ph = (tc < AVE_GO - 1.5 ? 1 : 0) | (tc >= ST_T0 && tc < ST_T0 + ST_GO - 1.5 ? 2 : 0);
@@ -977,6 +1053,6 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
       if (fr !== b.frame) { b.frame = fr; drawBB(b.g, b.brand + Math.floor(time / 7 + i * 0.25), time); b.tex.needsUpdate = true; }
     }
   }
-  return { facadeMat, freeTextureData, setWindows, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, spawnRoof, MAP, drawMap, vents, parkRect,
+  return { facadeMat, freeTextureData, setWindows, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, spawnRoof, shops, MAP, drawMap, vents, parkRect,
     stats: { boxes: boxes.length, trees: NT, lamps: NL, boards: bbSpots.length, spans: spans.length, chunks: Object.keys(buckets).length, facadeMeshes: chunkMeshes } };
 }

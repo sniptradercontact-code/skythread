@@ -5,10 +5,19 @@ self-contained `index.html` - open it locally or host it anywhere static.
 
 The city is a compressed take on Manhattan: a long island with wide one-way avenues and
 narrow cross streets, a Downtown and a Midtown skyscraper cluster (towers up to ~540 m),
-brick districts between them, a big central park, two suspension bridges and outer
-boroughs across the rivers. Streets carry signal-controlled traffic (sedans, taxis, SUVs,
-vans, trucks, buses, parked cars) and crowds on the sidewalks. Everything is generated in
-code - there are no model or audio files; sound is synthesised with the Web Audio API.
+brick districts between them, a big central park, suspension bridges over both rivers,
+a harbor with an island and a statue, and low-rise outer boroughs that run out to hills
+on the horizon. Streets carry signal-controlled traffic (sedans, taxis, SUVs, vans,
+trucks, buses, parked cars); people walk the sidewalks, cross with the lights and
+jaywalk through stopped traffic.
+
+Four shops can be entered on foot (a bodega, a pizzeria, a coffee shop and a camera
+shop), each with its own interior and staff, and a short seven-step story, LAST ORDERS,
+runs between them. The map (M) lifts the camera to a tilted view of the real city, with
+shops, the story objective and time trials; a trial's route is drawn once you pick it.
+
+Everything is generated in code - there are no model, texture or audio files; sound is
+synthesised with the Web Audio API.
 
 ## Play
 
@@ -23,11 +32,13 @@ Open `index.html` in a browser, click to start.
 | F / right click | slingshot: haul yourself toward the reticle and fly on past it |
 | Shift | sprint / dive / wall-run |
 | Walls | let go of swing and steer into a wall to stick and climb |
-| Q Z E R | front flip, backflip, corkscrew, 360 spin |
+| Q Z E R | front flip, backflip, corkscrew, 360 spin (in the air) |
+| E | on foot: enter a shop, talk, pick things up |
 | X | restart |
 | G | graphics quality (auto-tunes toward 100 FPS until you change it) |
 | T | time of day (golden hour / midday / night) |
-| M | city map and time trials (pick one with a click or 1-4) |
+| M | city map: drag to turn, scroll to zoom; click a time trial (or 1-4) to see its route, click again or Enter to start |
+| K | switch suit trim (after finishing the story) |
 | N | mute |
 | H | toggle help |
 
