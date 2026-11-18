@@ -7,7 +7,26 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// ---------------------------------------------------------------- haze: thinner with height, glowing toward the sun
+// The sun's direction and the haze density travel in the fog's two spare numbers (near = azimuth.elevation, far = density.glow),
+// so every material in the scene picks them up without being touched.
+THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying vec3 vFogPos;\n#endif';
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogPos = mvPosition.xyz;\n#endif';
+THREE.ShaderChunk.fog_pars_fragment = '#ifdef USE_FOG\n\tuniform vec3 fogColor;\n\tuniform float fogNear;\n\tuniform float fogFar;\n\tvarying vec3 vFogPos;\n#endif';
+THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
+	float hzDist = length( vFogPos );
+	vec3 hzDir = ( vFogPos / max( hzDist, 1e-4 ) ) * mat3( viewMatrix );
+	float hzAz = floor( fogNear ) * 0.01745329, hzEl = fract( fogNear ) * 1.5707963;
+	vec3 hzSun = vec3( cos( hzEl ) * sin( hzAz ), sin( hzEl ), cos( hzEl ) * cos( hzAz ) );
+	float hzDen = floor( fogFar ) * 1e-6, hzGlow = fract( fogFar ) * 2.0;
+	float hzY = cameraPosition.y * 0.002, hzDy = hzDir.y * hzDist * 0.002;
+	float hzK = abs( hzDy ) > 0.01 ? ( exp( - hzY ) - exp( - hzY - hzDy ) ) / hzDy : exp( - hzY );
+	float hzX = hzDen * hzDist * clamp( hzK * 1.16, 0.0, 1.5 );
+	float fogFactor = 1.0 - exp( - hzX * hzX );
+	float hzS = max( dot( hzDir, hzSun ), 0.0 ), hzS2 = hzS * hzS;
+	vec3 hzCol = fogColor * mix( vec3( 0.84, 0.92, 1.07 ), vec3( 1.0 ), hzS ) + fogColor * vec3( 1.0, 0.7, 0.4 ) * ( hzGlow * ( 0.3 * hzS2 + 0.85 * hzS2 * hzS2 * hzS2 * hzS2 ) );
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, hzCol, fogFactor );
+#endif`;
 import { buildWorld, boxes, query, addBox, makeWebTex, rnd, CYC, AVE_GO, ST_T0, ST_GO, cellX, cellZ, HALFX, HALFZ, BX, BZ } from './world.js';
 import { buildLife, makeFigure } from './life.js';
 import { buildHero, JOINTS } from './hero.js';
@@ -72,9 +91,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.4, bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.45, bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.5, cloudD: 0.55, glow: 1.25, tintS: [0.93, 0.99, 1.08], tintH: [1.05, 1.0, 0.93], bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.5, cloudD: 0.6, glow: 0.5, tintS: [0.96, 1.0, 1.05], tintH: [1.02, 1.0, 0.97], bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, cloudD: 0.35, glow: 0, tintS: [0.9, 0.97, 1.1], tintH: [1.04, 1.0, 0.95], bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -88,6 +107,8 @@ function makeNightSky() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.mapping = THREE.EquirectangularReflectionMapping; return t;
 }
 const nightSky = makeNightSky();
+// pack the haze parameters into the fog (see the shader chunk at the top)
+function setHaze(k) { const t = TOD[todIdx]; scene.fog.near = Math.round(t.azim) + clamp(t.elev / 90, 0, 0.999); scene.fog.far = Math.max(1, Math.round(t.fogD * 1e6 * k)) + clamp(t.glow * 0.5, 0, 0.99); }
 function applyTOD(i) {
   const t = TOD[i]; todIdx = i;
   const sunDir = new V3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - t.elev), THREE.MathUtils.degToRad(t.azim));
@@ -95,13 +116,13 @@ function applyTOD(i) {
     const u = s.material.uniforms;
     u.turbidity.value = t.turb; u.rayleigh.value = t.ray; u.mieCoefficient.value = t.mie; u.mieDirectionalG.value = 0.86;
     u.sunPosition.value.copy(sunDir);
-    if (u.cloudCoverage) { u.cloudCoverage.value = t.clouds; u.cloudDensity.value = 0.35; }
+    if (u.cloudCoverage) { u.cloudCoverage.value = t.clouds; u.cloudDensity.value = t.cloudD; u.cloudScale.value = 0.00026; u.cloudElevation.value = 0.42; }
   }
   if (t.lightElev != null) lightDir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - t.lightElev), THREE.MathUtils.degToRad(t.lightAzim));
   else lightDir.copy(sunDir);
   sun.color.set(t.sunColor); sun.intensity = t.sunI;
   hemi.color.set(t.sky); hemi.groundColor.set(t.gnd); hemi.intensity = t.hemiI;
-  scene.fog = new THREE.FogExp2(t.fog, t.fogD);
+  scene.fog = new THREE.Fog(t.fog, 0, 1); setHaze(1);
   renderer.toneMappingExposure = t.exp;
   const night = t.night > 0.5;
   world.setWindows(t.win, t.lit, t.shop);
@@ -152,21 +173,53 @@ const DofShader = {
 class DofPass extends ShaderPass {
   render(r, writeBuffer, readBuffer, dt, mask) { this.uniforms.tDepth.value = readBuffer.depthTexture; this.uniforms.uRes.value.set(readBuffer.width, readBuffer.height); super.render(r, writeBuffer, readBuffer, dt, mask); }
 }
-let composer = null, bloom = null, dof = null, compSig = '';
+// the last pass: tone mapping, a gentle grade (contrast, saturation, cool shadows / warm highlights), streaks at speed, dither
+const FinalShader = {
+  uniforms: { tDiffuse: { value: null }, toneMappingExposure: { value: 1 }, uBlur: { value: 0 }, uSat: { value: 1.08 }, uCon: { value: 0.1 }, uTintS: { value: new V3(1, 1, 1) }, uTintH: { value: new V3(1, 1, 1) }, uSeed: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+    #include <tonemapping_pars_fragment>
+    uniform sampler2D tDiffuse; uniform float uBlur, uSat, uCon, uSeed; uniform vec3 uTintS, uTintH; varying vec2 vUv;
+    void main() {
+      vec2 d = vUv - 0.5; float r2 = dot(d, d);
+      vec3 col;
+      if (uBlur > 0.0005) { // the edges of the frame smear back toward the centre; the middle, where you are, stays sharp
+        float a = uBlur * smoothstep(0.02, 0.26, r2), j = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)) + uSeed) * 43758.5453);
+        col = vec3(0.0);
+        for (int i = 0; i < 6; i++) col += texture2D(tDiffuse, vUv - d * a * (float(i) + j) / 6.0).rgb;
+        col /= 6.0;
+      } else col = texture2D(tDiffuse, vUv).rgb;
+      col = ACESFilmicToneMapping(col);
+      float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(vec3(l), col, uSat);
+      col = pow(col, vec3(0.9));                                // open up the shade a little
+      col = mix(col, col * col * (3.0 - 2.0 * col), uCon);
+      col *= mix(uTintS, uTintH, smoothstep(0.02, 0.6, l));
+      col = clamp(col, 0.0, 1.0);
+      col = mix(col * 12.92, 1.055 * pow(col, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, col));
+      col += (fract(sin(dot(gl_FragCoord.xy + uSeed, vec2(4.898, 7.23))) * 23421.631) - 0.5) / 255.0;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+class FinalPass extends ShaderPass {
+  constructor() { super(FinalShader); this.material.toneMapped = false; }
+  render(r, w, rb, dt, mask) { this.uniforms.toneMappingExposure.value = r.toneMappingExposure; this.uniforms.uSeed.value = (this.uniforms.uSeed.value + 0.37) % 10; super.render(r, w, rb, dt, mask); }
+}
+let composer = null, bloom = null, dof = null, finalPass = null, compSig = '';
 function buildComposer(q) {
   const sig = q.direct ? 'direct' : `${q.msaa}|${q.dof}|${q.bloom}`;
   if (sig === compSig) return;
   compSig = sig;
-  if (composer) { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); composer = null; bloom = null; dof = null; }
+  if (composer) { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); composer = null; bloom = null; dof = null; finalPass = null; }
   if (q.direct) return;
   const rt = new THREE.WebGLRenderTarget(8, 8, { type: THREE.HalfFloatType, samples: q.msaa, depthTexture: q.dof ? new THREE.DepthTexture(8, 8) : null });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   if (q.dof) { dof = new DofPass(DofShader); composer.addPass(dof); }
   if (q.bloom) { bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.1, 0.35, 2.5); composer.addPass(bloom); }
-  composer.addPass(new OutputPass());
+  finalPass = new FinalPass(); composer.addPass(finalPass); applyPost();
 }
-function applyPost() { if (bloom) { bloom.strength = TOD[todIdx].bloom; bloom.threshold = TOD[todIdx].bloomT; } }
+function applyPost() { const t = TOD[todIdx]; if (bloom) { bloom.strength = t.bloom; bloom.threshold = t.bloomT; } if (finalPass) { finalPass.uniforms.uTintS.value.fromArray(t.tintS); finalPass.uniforms.uTintH.value.fromArray(t.tintH); } }
 function applyQuality(i, dyn = 1, announce = false) {
   qIdx = clamp(i, 0, QUALITY.length - 1); qDyn = dyn;
   const q = QUALITY[qIdx], pr = q.pr * dyn;
@@ -1211,10 +1264,10 @@ const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType 
 const cubeCam = new THREE.CubeCamera(2, 9000, cubeRT);
 let cityEnv = null;
 function captureEnv() { // used only by the building facades; everything else keeps the clean sky
-  const hv = hero.visible, fd = scene.fog.density; hero.visible = false; scene.fog.density = fd * 2.5;
+  const hv = hero.visible; hero.visible = false; setHaze(2.5);
   cubeCam.position.set(P.rpos.x, 240, P.rpos.z);
   cubeCam.update(renderer, scene);
-  hero.visible = hv; scene.fog.density = fd;
+  hero.visible = hv; setHaze(1);
   const rt = pmrem.fromCubemap(cubeRT.texture);
   if (cityEnv) cityEnv.dispose();
   cityEnv = rt; world.facadeMat.envMap = rt.texture; world.facadeMat.envMapIntensity = TOD[todIdx].env * 1.5; world.facadeMat.needsUpdate = true;
@@ -1393,9 +1446,8 @@ function mapCamera(dt) {
   camera.position.set(ox - Math.sin(MAPV.yaw) * D, H, oz - Math.cos(MAPV.yaw) * D); camera.lookAt(ox, 0, oz); _mq2.copy(camera.quaternion);
   camera.position.lerpVectors(_mp, camera.position, e); camera.quaternion.slerpQuaternions(_mq, _mq2, e);
   camera.fov += (38 - camera.fov) * e; camera.updateProjectionMatrix();
-  scene.fog.density = TOD[todIdx].fogD * (1 - 0.86 * e);
+  setHaze(1 - 0.86 * e);
   renderer.toneMappingExposure = TOD[todIdx].exp * (1 + (todIdx === 2 ? 0.9 : 1.5) * e);   // rooftops seen from above need more light than the street view
-  world.cloudMat.visible = e < 0.35;
   drawMapFx(clamp((MAPV.k - 0.6) / 0.35, 0, 1));
 }
 
@@ -1816,7 +1868,11 @@ $('fade').classList.add('out');
   if (dbgCam) { if (dbgCam.f) { camera.position.copy(P.rpos).add(dbgCam.p); camera.lookAt(P.rpos.x, P.rpos.y + dbgCam.t.y, P.rpos.z); } else { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); } }
   if (q.sh > 0 && frameNo % q.shEvery === 0) placeSun();
   if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn * (1 - MAPV.k) * (shopIn ? 0 : 1); dof.uniforms.uFocus.value = 130 + P.perch * 30; }
-  sky.position.copy(camera.position);
+  sky.position.copy(camera.position); sky.material.uniforms.time.value = time;
+  if (finalPass) { // streaks at the edge of the frame once you are really moving
+    const want = started && !paused && !shopIn ? clamp((P.vel.length() - 30) / 45, 0, 1) * 0.075 : 0;
+    blurK += (want - blurK) * (1 - Math.exp(-Math.min(rawDt, 0.1) * 5)); finalPass.uniforms.uBlur.value = blurK * (1 - MAPV.k);
+  }
   if (composer) composer.render(); else renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -1832,4 +1888,5 @@ function audioDbg() {
   return { state: actx.state, rms: +Math.sqrt(s2 / d.length).toFixed(4), peak: +pk.toFixed(3), carVoices: AU.cars.map((v) => v.id), crowd: life.info.crowd };
 }
 function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
-window.__G = { storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
+let blurK = 0;
+window.__G = { sky, setHaze, TOD, getFinal: () => finalPass, storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };

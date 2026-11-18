@@ -333,8 +333,8 @@ export function buildWorld(scene, renderer) {
   const facadeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, emissive: 0xffffff });
   facadeMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, facadeU);
-    sh.vertexShader = 'attribute float aLayer; varying vec2 vUvF; varying float vLayer;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vUvF = uv; vLayer = aLayer;');
-    sh.fragmentShader = `uniform sampler2DArray tAlb; uniform sampler2DArray tRM; uniform float uWin; uniform float uLit; uniform float uShop; varying vec2 vUvF; varying float vLayer;
+    sh.vertexShader = 'attribute float aLayer; varying vec2 vUvF; varying float vLayer; varying float vWy;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vUvF = uv; vLayer = aLayer; vWy = position.y;');
+    sh.fragmentShader = `uniform sampler2DArray tAlb; uniform sampler2DArray tRM; uniform float uWin; uniform float uLit; uniform float uShop; varying vec2 vUvF; varying float vLayer; varying float vWy;
 float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 ` + sh.fragmentShader.replace('#include <map_fragment>', `
   float fl = floor(vLayer + 0.5);
@@ -345,6 +345,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   float fshop = step(${SHOP_LAYER}.0 - 0.5, fl);
   float fglass = fRM.r * (1.0 - fshop);
   diffuseColor *= fAlb;
+  diffuseColor.rgb *= 0.74 + 0.26 * smoothstep(0.0, 7.0, vWy);   // street grime and the shade pooled at the foot of a wall
   diffuseColor.rgb *= mix(1.0, 0.84 + 0.3 * fh2, fglass);`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * fRM.g;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = metalness * fRM.b;')
@@ -354,17 +355,31 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   vec3 fwarm = mix(vec3(1.0, 0.76, 0.48), vec3(0.78, 0.9, 1.0), step(0.7, fh2));
   totalEmissiveRadiance = fwarm * (fon * fglass * uWin * (0.5 + 1.2 * fAlb.g)) + fAlb.rgb * (fRM.r * fshop * uShop);`);
   };
-  facadeMat.customProgramCacheKey = () => 'skyFacade';
+  facadeMat.customProgramCacheKey = () => 'skyFacade2';
   const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const walkMat = new THREE.MeshLambertMaterial({ map: makeWalkTex(), vertexColors: true });
   const groundMat = new THREE.MeshLambertMaterial({ map: makeGroundTex() });
+  const weather = (m, key, amt) => { // slow world-space variation so no two blocks read alike: worn patches, darker stretches
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'varying vec2 vWxz;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWxz = (modelMatrix * vec4(position, 1.0)).xz;');
+      sh.fragmentShader = `varying vec2 vWxz;
+float wh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1.0, 0.0)), f.x), mix(wh(i + vec2(0.0, 1.0)), wh(i + vec2(1.0, 1.0)), f.x), f.y); }
+` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  float wv = wn(vWxz * 0.031) * 0.55 + wn(vWxz * 0.13) * 0.3 + wn(vWxz * 0.9) * 0.15;
+  diffuseColor.rgb *= ${(1 - amt * 0.5).toFixed(3)} + ${amt.toFixed(3)} * wv;`);
+    };
+    m.customProgramCacheKey = () => key;
+  };
+  weather(groundMat, 'wxGround', 0.34); weather(walkMat, 'wxWalk', 0.22);
+  const aoMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, premultipliedAlpha: true, blending: THREE.MultiplyBlending, depthWrite: false, fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
   const nightMat = new THREE.MeshBasicMaterial({ vertexColors: true });
 
   // chunk buckets: everything static is grouped by district-sized chunks for frustum culling
   const buckets = {};
   let B = null;
-  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: new GB(true), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), geos: [], trees: [], lamps: [] }));
+  const useB = (key) => (B = buckets[key] || (buckets[key] = { fb: new GB(true), flat: new GB(), walk: new GB(), ground: new GB(), night: new GB(), neon: new GB(), spill: new GB(), ao: new GB(), geos: [], trees: [], lamps: [] }));
   const cellB = (i, j) => useB('c' + Math.floor(clampN(i, 0, NA - 1) / 3) + '_' + Math.floor(clampN(j, 0, NS - 1) / 4));
   const spawnRoof = { x: 0, y: 0, z: 0 }, shops = [];
   const SHOPCELLS = { '4,8': ['BOROUGH SLICE', 'pizza'], '3,14': ['KUMO COFFEE', 'coffee'], '2,21': ['PIXEL OPTICS', 'optics'] };
@@ -389,6 +404,8 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
   const band = (x0, x1, z0, z1, y0, y1, col) => B.night.walls(x0 - 0.6, x1 + 0.6, z0 - 0.6, z1 + 0.6, y0, y1, 8, col);
 
   // one building tier: windowed walls, optional ground-floor shops, capped flat roof
+  let aoY = -1; const AOIN = [0.52, 0.53, 0.56];
+  let ts2 = 987654321; const tr2 = () => ((ts2 = (ts2 * 1664525 + 1013904223) >>> 0) / 4294967296);   // a separate stream for dressing added later, so the city itself does not shift
   function tier(st, x0, x1, z0, z1, y0, y1, tint, shop, cap, roofCol) {
     const yw = shop ? SHOP_H : y0;
     if (y1 > yw) { B.fb.layer = st; B.fb.walls(x0, x1, z0, z1, yw, y1, curTile, tint); }
@@ -399,6 +416,11 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     if (cap) { const e = 0.45; B.flat.walls(x0 - e, x1 + e, z0 - e, z1 + e, y1 - 1.3, y1, 8, K.trim); B.flat.top(x0 - e, x1 + e, z0 - e, z1 + e, y1, 8, roofCol); }
     else B.flat.top(x0, x1, z0, z1, y1, 8, roofCol);
     addBox(x0, x1, y0, y1, z0, z1);
+    if (y0 === 0 && aoY > 0) { // contact shadow: a soft dark band on the pavement where the wall meets it
+      const w = 2.6, y = aoY, U = [0, 0], N = [0, 1, 0];
+      const band = (ax, az, bx, bz, ox, oz) => { const k = B.ao.p.length / 3; B.ao.quad([ax, y, az], [bx, y, bz], [bx + ox + (bx - ax ? Math.sign(bx - ax) * w : 0), y, bz + oz + (bz - az ? Math.sign(bz - az) * w : 0)], [ax + ox - (bx - ax ? Math.sign(bx - ax) * w : 0), y, az + oz - (bz - az ? Math.sign(bz - az) * w : 0)], N, U, U, U, U, AOIN); for (const q of [2, 3]) { B.ao.c[(k + q) * 3] = B.ao.c[(k + q) * 3 + 1] = B.ao.c[(k + q) * 3 + 2] = 1; } };
+      band(x0, z0, x1, z0, 0, -w); band(x0, z1, x1, z1, 0, w); band(x0, z0, x0, z1, -w, 0); band(x1, z0, x1, z1, w, 0);
+    }
     if (y0 === 0) map.b.push([x0, x1, z0, z1, y1]);
   }
   function roofStuff(x0, x1, z0, z1, y, h) {
@@ -621,6 +643,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     const zn = zoneOf(i, j);
     if (zn === 'park') continue;
     const x0 = bx + AVE / 2, x1 = bx + BX - AVE / 2, z0 = bz + ST / 2, z1 = bz + BZ - ST / 2;
+    aoY = zn === 'battery' ? -1 : SH + 0.035;
     B.walk.walls(x0, x1, z0, z1, 0, SH, 4, WHITE); addBox(x0, x1, -1, SH, z0, z1, true);
     map.slabs.push([x0, x1, z0, z1, zn === 'battery' ? 2 : 1]);
     if (zn === 'battery') {
@@ -631,7 +654,12 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     B.walk.top(x0, x1, z0, z1, SH, 4, WHITE);
     for (const t of [0.125, 0.375, 0.625, 0.875]) { B.lamps.push([x0 + (x1 - x0) * t, z0 + 0.9, 0], [x0 + (x1 - x0) * t, z1 - 0.9, Math.PI]); }
     for (const t of [0.27, 0.73]) B.lamps.push([x0 + 0.9, z0 + (z1 - z0) * t, Math.PI / 2], [x1 - 0.9, z0 + (z1 - z0) * t, -Math.PI / 2]);
-    if (rnd() < 0.6) for (let s = x0 + 8; s < x1 - 12; s += 20) { B.trees.push([s, SH, z0 + 1.9, rr(0.75, 1.05), 0]); B.trees.push([s + 9, SH, z1 - 1.9, rr(0.75, 1.05), 0]); }
+    { // street trees in soil pits along every kerb, turning colour here and there
+      const had = rnd() < 0.6, pit = (tx, tz) => { B.flat.top(tx - 0.85, tx + 0.85, tz - 0.85, tz + 0.85, SH + 0.025, 8, [0.2, 0.15, 0.11]); B.flat.walls(tx - 0.95, tx + 0.95, tz - 0.95, tz + 0.95, SH, SH + 0.09, 8, [0.42, 0.41, 0.4]); };
+      if (had) for (let s = x0 + 8; s < x1 - 12; s += 20) { B.trees.push([s, SH, z0 + 1.9, rr(0.75, 1.05), tr2() < 0.3 ? 1 : 0]); B.trees.push([s + 9, SH, z1 - 1.9, rr(0.75, 1.05), tr2() < 0.3 ? 1 : 0]); pit(s, z0 + 1.9); pit(s + 9, z1 - 1.9); }
+      else for (let s = x0 + 13; s < x1 - 12; s += 26) { B.trees.push([s, SH, z0 + 1.9, 0.7 + tr2() * 0.3, tr2() < 0.4 ? 1 : 0]); B.trees.push([s + 12, SH, z1 - 1.9, 0.7 + tr2() * 0.3, tr2() < 0.4 ? 1 : 0]); pit(s, z0 + 1.9); pit(s + 12, z1 - 1.9); }
+      for (let s = z0 + 12; s < z1 - 9; s += 17) { B.trees.push([x0 + 1.9, SH, s, 0.8 + tr2() * 0.3, tr2() < 0.35 ? 1 : 0]); B.trees.push([x1 - 1.9, SH, s + 6, 0.8 + tr2() * 0.3, tr2() < 0.35 ? 1 : 0]); pit(x0 + 1.9, s); pit(x1 - 1.9, s + 6); }
+    }
     props(x0, x1, z0, z1);
     const ax0 = x0 + WALK, ax1 = x1 - WALK, az0 = z0 + WALK, az1 = z1 - WALK;
     if (landmark(i, j, ax0, ax1, az0, az1)) continue;
@@ -685,6 +713,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     }
   }
 
+  aoY = -1;
   // ---------------------------------------------------------------- the park
   const parkRect = {};
   {
@@ -900,6 +929,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     if (b.ground.p.length) addMesh(b.ground.geo(), groundMat, false, true);
     if (b.night.p.length) { const m = addMesh(b.night.geo(), nightMat, false, false); m.visible = false; nightMeshes.push(m); }
     if (b.neon.p.length) addMesh(b.neon.geo(), neonMat, false, false);
+    if (b.ao.p.length) { const m = addMesh(b.ao.geo(), aoMat, false, false); m.renderOrder = 1; }
     if (b.spill.p.length) { const m = addMesh(b.spill.geo(), spillMat, false, false); m.renderOrder = 2; m.visible = false; lightMeshes.push(m); }
     const T = b.trees;
     if (T.length) {
@@ -957,7 +987,7 @@ float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 
     const cx = rr(-4200, 4200), cz = rr(-4200, 4200), cy = rr(640, 1050), n = 3 + ((rnd() * 4) | 0), sc = rr(0.7, 1.6);
     for (let q = 0; q < n && k < NCL; q++, k++) { dm.position.set(cx + rr(-110, 110) * sc, cy + rr(-14, 14), cz + rr(-60, 60) * sc); dm.scale.set(rr(70, 150) * sc, rr(26, 46) * sc, rr(55, 110) * sc); dm.rotation.set(0, rnd() * 6, 0); dm.updateMatrix(); clouds.setMatrixAt(k, dm.matrix); }
   }
-  clouds.frustumCulled = false; scene.add(clouds);
+  clouds.frustumCulled = false; clouds.visible = false; scene.add(clouds);   // the sky now draws its own soft cloud layer
 
   // ---------------------------------------------------------------- road network description (used by the traffic system)
   const spans = [];

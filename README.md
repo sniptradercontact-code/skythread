@@ -16,6 +16,10 @@ shop), each with its own interior and staff, and a short seven-step story, LAST 
 runs between them. The map (M) lifts the camera to a tilted view of the real city, with
 shops, the story objective and time trials; a trial's route is drawn once you pick it.
 
+Rendering: haze that thins with height and glows toward the sun, a soft cloud layer in
+the sky, contact shadows where buildings meet the pavement, weathered streets, and a
+final grading pass with speed streaks at the edge of the frame.
+
 Everything is generated in code - there are no model, texture or audio files; sound is
 synthesised with the Web Audio API.
 
