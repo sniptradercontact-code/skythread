@@ -17,8 +17,11 @@ runs between them. The map (M) lifts the camera to a tilted view of the real cit
 shops, the story objective and time trials; a trial's route is drawn once you pick it.
 
 Rendering: haze that thins with height and glows toward the sun, a soft cloud layer in
-the sky, contact shadows where buildings meet the pavement, weathered streets, and a
-final grading pass with speed streaks at the edge of the frame.
+the sky, contact shadows where buildings meet the pavement, and a final grading pass
+with speed streaks at the edge of the frame. Every facade carries relief worked out from
+its own paint (panes set back, frames proud, joints cut in), weathers in world space so
+no two walls match, and has a room behind each pane that shifts with your view. Roads
+are lit with relief on better hardware, and shadows reach further down the avenue.
 
 Everything is generated in code - there are no model, texture or audio files; sound is
 synthesised with the Web Audio API.

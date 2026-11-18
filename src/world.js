@@ -195,12 +195,67 @@ function arrayTex(canvases, srgb) {
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = ANISO; t.needsUpdate = true;
   return t;
 }
+// Relief for every facade layer, worked out from its own paint: panes sit back in the wall, frames stand proud of it,
+// mortar joints and panel seams are cut in. RGB = tangent-space normal, A = recess shading (darkest under the lintel).
+function boxBlur(src, dst, tmp, W, r) { // separable, wrapping, so tiles still meet
+  const n = 2 * r + 1;
+  for (let y = 0; y < W; y++) { let a = 0; for (let k = -r; k <= r; k++) a += src[y * W + ((k + W) % W)]; for (let x = 0; x < W; x++) { tmp[y * W + x] = a / n; a += src[y * W + ((x + r + 1) % W)] - src[y * W + ((x - r + W) % W)]; } }
+  for (let x = 0; x < W; x++) { let a = 0; for (let k = -r; k <= r; k++) a += tmp[((k + W) % W) * W + x]; for (let y = 0; y < W; y++) { dst[y * W + x] = a / n; a += tmp[((y + r + 1) % W) * W + x] - tmp[((y - r + W) % W) * W + x]; } }
+}
+function heightToNormal(H, W, Hh, data, base, strength, AO) { // rows flipped so v runs upward
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    const xl = (x + W - 1) % W, xr = (x + 1) % W, yu = (y + Hh - 1) % Hh, yd = (y + 1) % Hh;
+    let nx = -(H[y * W + xr] - H[y * W + xl]) * strength, ny = (H[yd * W + x] - H[yu * W + x]) * strength;
+    const l = 1 / Math.sqrt(nx * nx + ny * ny + 1), o = base + ((Hh - 1 - y) * W + x) * 4;
+    data[o] = (nx * l * 0.5 + 0.5) * 255; data[o + 1] = (ny * l * 0.5 + 0.5) * 255; data[o + 2] = (l * 0.5 + 0.5) * 255; data[o + 3] = AO ? AO[y * W + x] * 255 : 255;
+  }
+}
+function reliefTex(layers) {
+  const W = 512, N = layers.length, data = new Uint8Array(W * W * 4 * N), [sc, sx] = mk(W, W);
+  const H = new Float32Array(W * W), Hs = new Float32Array(W * W), Hw = new Float32Array(W * W), tmp = new Float32Array(W * W), AO = new Float32Array(W * W);
+  layers.forEach(([alb, rm], k) => {
+    sx.drawImage(alb, 0, 0, W, W);
+    const a = sx.getImageData(0, 0, W, W).data, m = rm.getContext('2d').getImageData(0, 0, W, W).data, shop = k === SHOP_LAYER;
+    for (let i = 0; i < W * W; i++) {
+      const lum = (a[i * 4] * 0.3 + a[i * 4 + 1] * 0.59 + a[i * 4 + 2] * 0.11) / 255, g = shop ? (m[i * 4] > 170 ? 1 : 0) : m[i * 4] / 255;
+      const frame = !shop && Math.abs(m[i * 4 + 1] - 127) < 4 && Math.abs(m[i * 4 + 2] - 89) < 4 ? 0.3 : 0;
+      H[i] = (1 - g) * (0.9 + lum * 1.2) + frame;
+    }
+    boxBlur(H, Hs, tmp, W, 1); boxBlur(H, Hw, tmp, W, 5);
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const up = ((y + W - 3) % W) * W + x; AO[y * W + x] = 1 - Math.min(0.5, Math.max(0, (Hw[up] - Hs[y * W + x]) * 0.75)); }
+    heightToNormal(Hs, W, W, data, k * W * W * 4, 1.5, AO);
+  });
+  const t = new THREE.DataArrayTexture(data, W, W, N);
+  t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = ANISO; t.needsUpdate = true;
+  return t;
+}
+// the same idea for a single canvas (the road): cracks, patches and paint edges catch the light
+function normalFromCanvas(cv, W, Hh, strength) {
+  const [sc, sx] = mk(W, Hh); sx.drawImage(cv, 0, 0, W, Hh);
+  const a = sx.getImageData(0, 0, W, Hh).data, H = new Float32Array(W * Hh), data = new Uint8Array(W * Hh * 4);
+  for (let i = 0; i < W * Hh; i++) H[i] = Math.min(0.45, (a[i * 4] * 0.3 + a[i * 4 + 1] * 0.59 + a[i * 4 + 2] * 0.11) / 255);   // paint is flat, not a ridge
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
+    const nx = -(H[y * W + (x + 1) % W] - H[y * W + (x + W - 1) % W]) * strength, ny = (H[((y + 1) % Hh) * W + x] - H[((y + Hh - 1) % Hh) * W + x]) * strength, l = 1 / Math.sqrt(nx * nx + ny * ny + 1), o = (y * W + x) * 4;
+    data[o] = (nx * l * 0.5 + 0.5) * 255; data[o + 1] = (ny * l * 0.5 + 0.5) * 255; data[o + 2] = (l * 0.5 + 0.5) * 255; data[o + 3] = 255;
+  }
+  const [oc, ox] = mk(W, Hh), id = ox.createImageData(W, Hh); id.data.set(data); ox.putImageData(id, 0, 0);
+  const t = new THREE.CanvasTexture(oc); t.anisotropy = ANISO; return t;
+}
 function makeWalkTex() {
   const S = 256, [cv, c] = mk(S, S);
   c.fillStyle = '#a7a39c'; c.fillRect(0, 0, S, S);
   for (let i = 0; i < 60; i++) { c.fillStyle = `rgba(0,0,0,${rr(0.03, 0.1)})`; c.beginPath(); c.ellipse(rnd() * S, rnd() * S, rr(3, 16), rr(2, 8), rnd() * 3, 0, 7); c.fill(); }
   c.fillStyle = 'rgba(60,58,55,0.5)'; c.fillRect(0, 0, S, 3); c.fillRect(0, 0, 3, S); c.fillRect(0, S / 2, S, 2); c.fillRect(S / 2, 0, 2, S);
-  grain(c, S, S, 12); return tex(cv);
+  grain(c, S, S, 12);
+  // the same slab at four times the detail: crisp joints, hairline cracks, gum and stains (its own random stream, so the city does not shift)
+  const S2 = 1024, [cv2, c2] = mk(S2, S2); let q = 424242; const xr = () => ((q = (q * 1664525 + 1013904223) >>> 0) / 4294967296);
+  c2.imageSmoothingEnabled = true; c2.drawImage(cv, 0, 0, S2, S2);
+  for (let i = 0; i < 26000; i++) { const v = xr(); c2.fillStyle = v < 0.5 ? `rgba(255,255,250,${0.03 + xr() * 0.07})` : `rgba(20,18,16,${0.04 + xr() * 0.1})`; c2.fillRect(xr() * S2, xr() * S2, 1 + xr() * 2, 1 + xr() * 2); }   // aggregate in the concrete
+  for (const o of [0, S2 / 2]) { c2.fillStyle = 'rgba(40,38,36,0.75)'; c2.fillRect(0, o, S2, 5); c2.fillRect(o, 0, 5, S2); c2.fillStyle = 'rgba(255,255,255,0.14)'; c2.fillRect(0, o + 5, S2, 2); c2.fillRect(o + 5, 0, 2, S2); }
+  for (let i = 0; i < 7; i++) { c2.strokeStyle = `rgba(30,28,26,${0.3 + xr() * 0.3})`; c2.lineWidth = 1 + xr(); c2.beginPath(); let px = xr() * S2, py = xr() * S2; c2.moveTo(px, py); for (let k = 0; k < 6; k++) { px += (xr() - 0.5) * 120; py += (xr() - 0.5) * 120; c2.lineTo(px, py); } c2.stroke(); }
+  for (let i = 0; i < 46; i++) { c2.fillStyle = `rgba(18,17,16,${0.25 + xr() * 0.4})`; c2.beginPath(); c2.arc(xr() * S2, xr() * S2, 2 + xr() * 4, 0, 7); c2.fill(); }   // old gum
+  for (let i = 0; i < 10; i++) { const g = c2.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, `rgba(25,22,18,${0.1 + xr() * 0.12})`); g.addColorStop(1, 'rgba(25,22,18,0)'); c2.save(); c2.translate(xr() * S2, xr() * S2); c2.scale(30 + xr() * 70, 20 + xr() * 50); c2.fillStyle = g; c2.beginPath(); c2.arc(0, 0, 1, 0, 7); c2.fill(); c2.restore(); }
+  return tex(cv2);
 }
 // one road tile per block: half an avenue on the left/right edges, half a street top/bottom
 function makeGroundTex() {
@@ -224,7 +279,7 @@ function makeGroundTex() {
   R(hA + 4.6, 0, hA + 5.0, hS); R(BX - hA - 5.0, 0, BX - hA - 4.6, hS); R(hA + 4.6, BZ - hS, hA + 5.0, BZ); R(BX - hA - 5.0, BZ - hS, BX - hA - 4.6, BZ);
   for (let i = 0; i < 14; i++) { const mx = (i < 7 ? rr(1, 12) : rr(BX - 12, BX - 1)) * sx, mz = rr(hS + 4, BZ - hS - 4) * sz; c.fillStyle = 'rgba(22,22,22,0.75)'; c.beginPath(); c.arc(mx, mz, 5, 0, 7); c.fill(); c.strokeStyle = 'rgba(90,90,90,0.6)'; c.lineWidth = 1; c.stroke(); }   // manholes
   grain(c, W, H, 14);
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; return t;
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; t.userData.cv = cv; return t;
 }
 export function makeWebTex() {
   const S = 128, [cv, c] = mk(S, S), m = S / 2;
@@ -327,51 +382,87 @@ export function query(minX, maxX, minZ, maxZ, out) {
 export function buildWorld(scene, renderer) {
   ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const layers = STYLES.map(makeFacade); layers.push(makeShops());
-  const facadeU = { tAlb: { value: arrayTex(layers.map((l) => l[0]), true) }, tRM: { value: arrayTex(layers.map((l) => l[1]), false) }, uWin: { value: 0.3 }, uLit: { value: 0.25 }, uShop: { value: 0.4 } };
-  // one material for every facade: the style is a texture-array layer chosen per vertex, glass is a tinted
-  // mirror of the sky and skyline, and which windows are lit is decided per window, so no two walls match
+  const facadeU = { tAlb: { value: arrayTex(layers.map((l) => l[0]), true) }, tRM: { value: arrayTex(layers.map((l) => l[1]), false) }, tNrm: { value: reliefTex(layers) }, uWin: { value: 0.3 }, uLit: { value: 0.25 }, uShop: { value: 0.4 }, uInt: { value: 0.3 }, uDepth: { value: 1 } };
+  // one material for every facade: the style is a texture-array layer chosen per vertex, glass is a tinted mirror of the sky
+  // and skyline, the walls carry relief and weather, and behind every pane is a room you can see into as you pass
   const facadeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, emissive: 0xffffff });
   facadeMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, facadeU);
-    sh.vertexShader = 'attribute float aLayer; varying vec2 vUvF; varying float vLayer; varying float vWy;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vUvF = uv; vLayer = aLayer; vWy = position.y;');
-    sh.fragmentShader = `uniform sampler2DArray tAlb; uniform sampler2DArray tRM; uniform float uWin; uniform float uLit; uniform float uShop; varying vec2 vUvF; varying float vLayer; varying float vWy;
+    sh.vertexShader = 'attribute float aLayer; varying vec2 vUvF; varying float vLayer; varying vec3 vWp;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vUvF = uv; vLayer = aLayer; vWp = position;');
+    sh.fragmentShader = `uniform sampler2DArray tAlb; uniform sampler2DArray tRM; uniform sampler2DArray tNrm; uniform float uWin; uniform float uLit; uniform float uShop; uniform float uInt; uniform float uDepth; varying vec2 vUvF; varying float vLayer; varying vec3 vWp;
 float fhash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float fnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(fhash(i), fhash(i + vec2(1.0, 0.0)), f.x), mix(fhash(i + vec2(0.0, 1.0)), fhash(i + vec2(1.0, 1.0)), f.x), f.y); }
 ` + sh.fragmentShader.replace('#include <map_fragment>', `
   float fl = floor(vLayer + 0.5);
   vec4 fAlb = texture(tAlb, vec3(vUvF, fl));
   vec4 fRM = texture(tRM, vec3(vUvF, fl));
+  vec4 fNr = texture(tNrm, vec3(vUvF, fl));
   vec2 fcell = floor(vUvF * 8.0);
   float fh = fhash(fcell), fh2 = fhash(fcell + 71.7);
   float fshop = step(${SHOP_LAYER}.0 - 0.5, fl);
   float fglass = fRM.r * (1.0 - fshop);
   diffuseColor *= fAlb;
-  diffuseColor.rgb *= 0.74 + 0.26 * smoothstep(0.0, 7.0, vWy);   // street grime and the shade pooled at the foot of a wall
+  diffuseColor.rgb *= 0.74 + 0.26 * smoothstep(0.0, 7.0, vWp.y);   // street grime and the shade pooled at the foot of a wall
+  float fwx = vWp.x + vWp.z, fnear = clamp(1.0 - fwidth(fwx) * 1.6, 0.0, 1.0);
+  float fdrift = fnoise(vec2(fwx, vWp.y) * 0.043), fstreak = fnoise(vec2(fwx * 1.3, vWp.y * 0.045));
+  diffuseColor.rgb *= mix(1.0, (0.9 + 0.2 * fdrift) * (1.0 - 0.17 * fnear * smoothstep(0.55, 0.9, fstreak)), (1.0 - fglass) * (1.0 - fshop));   // weather: slow drift in tone, rain streaks down the masonry
+  diffuseColor.rgb *= mix(1.0, fNr.a, 0.9);                        // panes and joints sit back in shade
   diffuseColor.rgb *= mix(1.0, 0.84 + 0.3 * fh2, fglass);`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * fRM.g;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = metalness * fRM.b;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  vec3 fq0 = -dFdx(vViewPosition), fq1 = -dFdy(vViewPosition); vec2 fs0 = dFdx(vUvF), fs1 = dFdy(vUvF);
+  vec3 fN = normal, fq1p = cross(fq1, fN), fq0p = cross(fN, fq0);
+  vec3 fT = fq1p * fs0.x + fq0p * fs1.x, fB = fq1p * fs0.y + fq0p * fs1.y;
+  float fdet = max(dot(fT, fT), dot(fB, fB)), fsc = fdet == 0.0 ? 0.0 : inversesqrt(fdet);
+  fT *= fsc; fB *= fsc;
+  if (uDepth > 0.5 && fsc > 0.0) { vec3 fnm = fNr.xyz * 2.0 - 1.0; normal = normalize(fT * fnm.x + fB * fnm.y + fN * fnm.z); }`)
       .replace('#include <emissivemap_fragment>', `
   float fband = step(0.93, fhash(vec2(fcell.y * 3.1, floor(fcell.x / 14.0))));
   float fon = max(step(1.0 - uLit, fh), fband);
   vec3 fwarm = mix(vec3(1.0, 0.76, 0.48), vec3(0.78, 0.9, 1.0), step(0.7, fh2));
-  totalEmissiveRadiance = fwarm * (fon * fglass * uWin * (0.5 + 1.2 * fAlb.g)) + fAlb.rgb * (fRM.r * fshop * uShop);`);
+  float froom = 1.0, fsee = 0.0;
+  if (uDepth > 0.5 && fglass > 0.04 && fsc > 0.0) { // a room behind the pane: follow the view ray into the bay and shade whatever it meets
+    vec3 fr = normalize(-vViewPosition);
+    vec3 frd = vec3(dot(fr, fT), dot(fr, fB), min(dot(fr, fN) / 1.3, -0.03));
+    frd.xy += (step(0.0, frd.xy) * 2.0 - 1.0) * 1e-4;
+    vec2 fp = fract(vUvF * 8.0), ft2 = (step(0.0, frd.xy) - fp) / frd.xy;
+    float ftb = -1.0 / frd.z, ft = min(min(ft2.x, ft2.y), ftb);
+    vec3 fhp = vec3(fp, 0.0) + frd * ft;
+    if (ft == ftb) { froom = 0.86;                                                                            // the back wall, and what stands against it
+      froom *= mix(1.0, 0.5, step(fhp.y, 0.2 + 0.26 * fh2) * step(abs(fhp.x - 0.3 - 0.4 * fh), 0.22));
+      froom *= mix(1.0, 0.76, step(abs(fhp.x - fh2), 0.1) * step(0.46, fhp.y) * step(fhp.y, 0.76)); }
+    else if (ft == ft2.y) froom = frd.y > 0.0 ? 1.3 : 0.4;                                                     // ceiling lights, floor
+    else froom = 0.64;
+    froom *= mix(1.0, 0.58, clamp(-fhp.z, 0.0, 1.0));
+    fsee = clamp(-dot(fr, fN), 0.0, 1.0) * (1.0 - smoothstep(0.42, 0.7, fAlb.g));                             // blinds and bright glass hide the room
+  }
+  vec3 ftint = mix(vec3(0.95, 0.88, 0.78), vec3(0.7, 0.79, 0.9), step(0.6, fh2));
+  totalEmissiveRadiance = fwarm * (froom * fon * fglass * uWin * (0.5 + 1.2 * fAlb.g)) + ftint * (froom * fsee * fglass * uInt * (1.0 - fon)) + fAlb.rgb * (fRM.r * fshop * uShop);`);
   };
-  facadeMat.customProgramCacheKey = () => 'skyFacade2';
+  facadeMat.customProgramCacheKey = () => 'skyFacade3';
   const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const walkMat = new THREE.MeshLambertMaterial({ map: makeWalkTex(), vertexColors: true });
   const groundMat = new THREE.MeshLambertMaterial({ map: makeGroundTex() });
-  const weather = (m, key, amt) => { // slow world-space variation so no two blocks read alike: worn patches, darker stretches
+  const weather = (m, key, amt, grit) => { // slow world-space variation so no two blocks read alike, and grit that only shows up close
     m.onBeforeCompile = (sh) => {
-      sh.vertexShader = 'varying vec2 vWxz;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWxz = (modelMatrix * vec4(position, 1.0)).xz;');
-      sh.fragmentShader = `varying vec2 vWxz;
+      sh.vertexShader = 'varying vec3 vWp3;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWp3 = (modelMatrix * vec4(position, 1.0)).xyz;');
+      sh.fragmentShader = `varying vec3 vWp3;
 float wh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh(i), wh(i + vec2(1.0, 0.0)), f.x), mix(wh(i + vec2(0.0, 1.0)), wh(i + vec2(1.0, 1.0)), f.x), f.y); }
 ` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-  float wv = wn(vWxz * 0.031) * 0.55 + wn(vWxz * 0.13) * 0.3 + wn(vWxz * 0.9) * 0.15;
-  diffuseColor.rgb *= ${(1 - amt * 0.5).toFixed(3)} + ${amt.toFixed(3)} * wv;`);
+  vec2 wq = vWp3.xz + vWp3.y * vec2(0.71, 0.53);
+  float wv = wn(wq * 0.031) * 0.55 + wn(wq * 0.13) * 0.3 + wn(wq * 0.9) * 0.15;
+  float wg = (wn(wq * 6.1) + wn(wq * 17.0) - 1.0) * clamp(1.0 - fwidth(wq.x) * 5.0, 0.0, 1.0);
+  diffuseColor.rgb *= ${(1 - amt * 0.5).toFixed(3)} + ${amt.toFixed(3)} * wv + ${grit.toFixed(3)} * wg;`);
     };
     m.customProgramCacheKey = () => key;
   };
-  weather(groundMat, 'wxGround', 0.34); weather(walkMat, 'wxWalk', 0.22);
+  weather(groundMat, 'wxGround', 0.34, 0.07); weather(walkMat, 'wxWalk', 0.22, 0.08); weather(flatMat, 'wxFlat', 0.2, 0.09);
+  // on better hardware the road is a lit surface with relief, so low sun rakes across cracks and glints off the worn lanes
+  const groundHi = new THREE.MeshStandardMaterial({ map: groundMat.map, normalMap: normalFromCanvas(groundMat.map.userData.cv, 1024, 512, 5), normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.74, metalness: 0, envMapIntensity: 0.5 });
+  weather(groundHi, 'wxGroundHi', 0.34, 0.07);
+  const groundMeshes = [];
   const aoMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, premultipliedAlpha: true, blending: THREE.MultiplyBlending, depthWrite: false, fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
   const nightMat = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -926,7 +1017,7 @@ float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const fl = b.geos.slice(); if (b.flat.p.length) fl.unshift(b.flat.geo());
     if (fl.length) addMesh(mergeGeometries(fl), flatMat);
     if (b.walk.p.length) addMesh(b.walk.geo(), walkMat, false, true);
-    if (b.ground.p.length) addMesh(b.ground.geo(), groundMat, false, true);
+    if (b.ground.p.length) groundMeshes.push(addMesh(b.ground.geo(), groundMat, false, true));
     if (b.night.p.length) { const m = addMesh(b.night.geo(), nightMat, false, false); m.visible = false; nightMeshes.push(m); }
     if (b.neon.p.length) addMesh(b.neon.geo(), neonMat, false, false);
     if (b.ao.p.length) { const m = addMesh(b.ao.geo(), aoMat, false, false); m.renderOrder = 1; }
@@ -1056,9 +1147,9 @@ float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     const tf = f >= 1 ? 1 : f > 0.6 ? 0.8 : 0.55;
     for (const m of treeMeshes) { m.count = Math.max(1, Math.round(m.userData.full * tf)); m.castShadow = treeShadows && !m.userData.far; }
   }
-  function setDetail(hi) { treeHi = !!hi; }
-  function freeTextureData() { facadeU.tAlb.value.image.data = null; facadeU.tRM.value.image.data = null; }   // the GPU has its copy; give the memory back
-  function setWindows(win, lit, shop) { facadeU.uWin.value = win; facadeU.uLit.value = lit; facadeU.uShop.value = shop; }
+  function setDetail(hi, depth = hi) { treeHi = !!hi; facadeU.uDepth.value = depth ? 1 : 0; const gm = depth ? groundHi : groundMat; for (const m of groundMeshes) m.material = gm; }
+  function freeTextureData() { facadeU.tAlb.value.image.data = null; facadeU.tRM.value.image.data = null; facadeU.tNrm.value.image.data = null; }   // the GPU has its copy; give the memory back
+  function setWindows(win, lit, shop, int = 0.3) { facadeU.uWin.value = win; facadeU.uLit.value = lit; facadeU.uShop.value = shop; facadeU.uInt.value = int; }
   function setNight(on) { for (const m of nightMeshes) m.visible = on; }
   function setStreetLight(k, neon) { // k: 0 day .. 1 night
     for (const m of lightMeshes) m.visible = k > 0.01;
@@ -1083,6 +1174,6 @@ float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       if (fr !== b.frame) { b.frame = fr; drawBB(b.g, b.brand + Math.floor(time / 7 + i * 0.25), time); b.tex.needsUpdate = true; }
     }
   }
-  return { facadeMat, freeTextureData, setWindows, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat], spans, spawn, spawnRoof, shops, MAP, drawMap, vents, parkRect,
+  return { facadeMat, freeTextureData, setWindows, update, setDensity, setDetail, setNight, setStreetLight, groundAt, zoneAt, streetAt, lampMat, glowMat, nightMat, cloudMat, waterMat, bbMats, streetMats: [groundMat, walkMat, groundHi], spans, spawn, spawnRoof, shops, MAP, drawMap, vents, parkRect,
     stats: { boxes: boxes.length, trees: NT, lamps: NL, boards: bbSpots.length, spans: spans.length, chunks: Object.keys(buckets).length, facadeMeshes: chunkMeshes } };
 }

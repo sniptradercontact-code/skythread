@@ -48,9 +48,9 @@ const FORCE_Q = QS.has('q') ? clamp(+QS.get('q') || 0, 0, 4) : QS.has('low') ? 4
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 // near/far: how far detailed and simple cars are drawn; peds: how many people at once
 const QUALITY = [
-  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 1, near: 190, far: 1100, peds: 2500, pedR: 270, pedHi: 420, detail: true, trees: 1 },
-  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 2048, shEvery: 2, near: 160, far: 900, peds: 1900, pedR: 250, pedHi: 380, detail: true, trees: 1 },
-  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 1536, shEvery: 2, near: 140, far: 700, peds: 1350, pedR: 220, pedHi: 260, detail: true, trees: 1 },
+  { name: 'ULTRA', pr: DPR, msaa: 4, bloom: true, dof: true, sh: 4096, shR: 210, shEvery: 1, near: 190, far: 1100, peds: 2500, pedR: 270, pedHi: 420, detail: true, trees: 1 },
+  { name: 'HIGH', pr: Math.min(DPR, 1.25), msaa: 4, bloom: true, dof: true, sh: 3072, shR: 170, shEvery: 2, near: 160, far: 900, peds: 1900, pedR: 250, pedHi: 380, detail: true, trees: 1 },
+  { name: 'MEDIUM', pr: 1, msaa: 0, bloom: true, dof: false, sh: 2048, shR: 150, shEvery: 2, near: 140, far: 700, peds: 1350, pedR: 220, pedHi: 260, detail: true, trees: 1 },
   { name: 'LOW', pr: 0.8, msaa: 0, direct: true, sh: 1024, shEvery: 3, near: 110, far: 500, peds: 850, pedR: 180, pedHi: 110, detail: false, trees: 0.7 },
   { name: 'BASIC', pr: 0.6, msaa: 0, direct: true, sh: 0, shEvery: 1, near: 90, far: 380, peds: 480, pedR: 140, pedHi: 0, detail: false, trees: 0.4 },
 ];
@@ -83,7 +83,7 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 let envRT = null, envDirty = 0;
 const sun = new THREE.DirectionalLight(0xffffff, 3);
 sun.castShadow = true; sun.shadow.mapSize.set(1536, 1536); sun.shadow.autoUpdate = false;
-const SHR = 120;
+let SHR = 120;
 Object.assign(sun.shadow.camera, { left: -SHR, right: SHR, top: SHR, bottom: -SHR, near: 10, far: 1100 });
 sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.08;
 scene.add(sun, sun.target);
@@ -91,9 +91,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.5, cloudD: 0.55, glow: 1.25, tintS: [0.93, 0.99, 1.08], tintH: [1.05, 1.0, 0.93], bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.5, cloudD: 0.6, glow: 0.5, tintS: [0.96, 1.0, 1.05], tintH: [1.02, 1.0, 0.97], bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, cloudD: 0.35, glow: 0, tintS: [0.9, 0.97, 1.1], tintH: [1.04, 1.0, 0.95], bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', int: 0.27, elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.5, cloudD: 0.55, glow: 1.25, tintS: [0.93, 0.99, 1.08], tintH: [1.05, 1.0, 0.93], bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', int: 0.5, elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.5, cloudD: 0.6, glow: 0.5, tintS: [0.96, 1.0, 1.05], tintH: [1.02, 1.0, 0.97], bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', int: 0.03, elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, cloudD: 0.35, glow: 0, tintS: [0.9, 0.97, 1.1], tintH: [1.04, 1.0, 0.95], bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -125,7 +125,7 @@ function applyTOD(i) {
   scene.fog = new THREE.Fog(t.fog, 0, 1); setHaze(1);
   renderer.toneMappingExposure = t.exp;
   const night = t.night > 0.5;
-  world.setWindows(t.win, t.lit, t.shop);
+  world.setWindows(t.win, t.lit, t.shop, t.int);
   world.setStreetLight(t.light, t.neon);
   for (const m of world.streetMats) m.emissiveIntensity = night ? 0.55 : 0;
   world.lampMat.emissiveIntensity = night ? 3.0 : t.light > 0.1 ? 2.0 : 0.3;
@@ -228,6 +228,7 @@ function applyQuality(i, dyn = 1, announce = false) {
   world.setDensity(q.trees, qIdx < 3); world.setDetail(q.detail);
   life.setQuality({ near: q.near, far: q.far, peds: q.peds, pedR: q.pedR, pedHi: q.pedHi });
   sun.castShadow = q.sh > 0;
+  if (q.sh > 0 && SHR !== (q.shR || 120)) { SHR = q.shR || 120; Object.assign(sun.shadow.camera, { left: -SHR, right: SHR, top: SHR, bottom: -SHR }); sun.shadow.camera.updateProjectionMatrix(); }   // better hardware throws shadows further down the avenue
   if (q.sh > 0 && sun.shadow.mapSize.x !== q.sh) { sun.shadow.mapSize.set(q.sh, q.sh); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   sun.shadow.needsUpdate = true;
   applyPost(); resize();
