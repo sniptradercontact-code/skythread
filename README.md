@@ -55,6 +55,7 @@ Open `index.html` in a browser, click to start.
 | M | city map: drag to move, scroll to zoom (out to the whole island); click a time trial (or 1-4) to see its route, click again or Enter to start |
 | K | switch suit trim (after finishing the story) |
 | V | first person / third person |
+| C | twin web: a line to a building on each side (one line if there is no pair) |
 | N | mute |
 | H | toggle help |
 

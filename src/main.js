@@ -296,17 +296,17 @@ const P = {
   wallN: new V3(), wallMove: new V3(0, 1, 0), hitN: new V3(), wallHit: false, impact: 0,
   zip: null, facing: new V3(0, 0, 1), timeInAir: 0, swingArmed: false, swingCd: 0, wallCd: 0,
   landT: 0, rollT: 0, skimT: 0, launchT: 0, relT: 0, squash: 0, idleT: 0, perch: 0, lean: 0, fy: 0,
-  rpos: new V3(), reachT: 0, reachAt: new V3(), trick: null, combo: 0, style: 0, runPh: 0, aimW: 0, aimW2: 0, baseQ: new THREE.Quaternion(), offset: new V3(), inp: new V3(), best: 0,
+  rpos: new V3(), reachT: 0, reachAt: new V3(), twin: null, twinArmed: false, yank: 0, flipQ: new THREE.Quaternion(), trick: null, combo: 0, style: 0, runPh: 0, aimW: 0, aimW2: 0, baseQ: new THREE.Quaternion(), offset: new V3(), inp: new V3(), best: 0,
 };
 const tv = new V3(), tv2 = new V3(), tv3 = new V3(), tv4 = new V3(), tq = new THREE.Quaternion(), tq2 = new THREE.Quaternion(), tm = new THREE.Matrix4();
 const qbuf = [], qbuf2 = [];
 
 // ---------------------------------------------------------------- input
 const keys = {};
-const ev = { jump: false, swing: false, zip: false, trick: null };
+const ev = { jump: false, swing: false, zip: false, trick: null , twin: false };
 let mouse0 = false, locked = false, everLocked = false, started = false, lastMouse = 0, dragging = false;
 // the camera eases toward yawT/pitchT; position never changes where it points
-const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0, cine: 1, fp: 0, bobPh: 0, bobK: 0 };
+const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0, cine: 1, fp: 0, bobPh: 0, bobK: 0, areaT: 0, area: 0, areaW: 0 };
 // first person: V switches; the choice is remembered
 let FP = false; try { FP = localStorage.getItem('skythread-view') === 'fp'; } catch (_) {}
 const pitchLo = () => (FP ? -1.5 : -1.35), pitchHi = () => (FP ? 1.5 : 0.8);
@@ -327,6 +327,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyE') { if (!interact()) ev.trick = 'e'; }
   if (e.code === 'KeyK') toggleTrim();
   if (e.code === 'KeyV') toggleView();
+  if (e.code === 'KeyC' && !e.repeat) { ev.twin = true; ev.swing = true; if (P.state === 'ground') ev.jump = true; }
   if (e.code === 'KeyR') ev.trick = 'r';
   if (e.code === 'KeyT') applyTOD((todIdx + 1) % TOD.length);
   if (e.code === 'KeyX' && started) { if (TR.phase === 'count' || TR.phase === 'run') startTrial(TR.k); else { endTrial(); respawn(false); P.style = 0; P.combo = 0; flash('RESTARTED'); } }
@@ -393,7 +394,7 @@ function moveInput(out) {
   return out;
 }
 const shiftDown = () => !!(keys.ShiftLeft || keys.ShiftRight);
-const swingDown = () => !shopIn && !dlg.on && !!(keys.Space || mouse0);
+const swingDown = () => !shopIn && !dlg.on && !!(keys.Space || mouse0 || keys.KeyC);
 
 // ---------------------------------------------------------------- geometry queries
 function rayBox(o, d, b, maxT) {
@@ -486,7 +487,7 @@ function computeZip() {
 function tryAttach() {
   if (shopIn) return false;
   const a = findAnchor(); if (!a) return false;
-  P.hand = P.hand === 'R' ? 'L' : 'R';
+  P.hand = P.hand === 'R' ? 'L' : 'R'; P.twin = null; P.yank = 1;
   P.state = 'swing'; P.anchor.copy(a.p); P.anchorN.copy(a.n);
   // physics pivot: pull the anchor's sideways offset toward the travel line so the arc carries you down the street
   P.swingDir.copy(a.dir);
@@ -499,7 +500,54 @@ function tryAttach() {
   addSplat(a.p, a.n); thwip();
   return true;
 }
+// C: a web to each side at once. Fires two only when there is a building on each side of the way you are heading, both high
+// enough and in clear sight; otherwise a single web, the usual way.
+const twinA = { p: new V3(), n: new V3() }, twinB = { p: new V3(), n: new V3() }, _tw = new V3();
+function sideAnchor(s, fwd, perp, out) {
+  const p = P.pos, ax = p.x + fwd.x * 24 + perp.x * s * 34, az = p.z + fwd.z * 24 + perp.z * s * 34;
+  query(p.x - 90, p.x + 90, p.z - 90, p.z + 90, qbuf);
+  let bs = 1e9;
+  for (const b of qbuf) {
+    if (b.slab || b.prop || b.maxY < p.y + 8) continue;
+    let qx = clamp(ax, b.minX, b.maxX), qz = clamp(az, b.minZ, b.maxZ), nx = 0, nz = 0;
+    if (qx > b.minX && qx < b.maxX && qz > b.minZ && qz < b.maxZ) { // the aim point is inside: take the face turned toward us
+      const d = [p.x - b.minX < 0 ? 1e9 : Math.abs(qx - b.minX), Math.abs(b.maxX - qx), Math.abs(qz - b.minZ), Math.abs(b.maxZ - qz)];
+      const m = Math.min(...d); if (m === d[0]) { qx = b.minX; nx = -1; } else if (m === d[1]) { qx = b.maxX; nx = 1; } else if (m === d[2]) { qz = b.minZ; nz = -1; } else { qz = b.maxZ; nz = 1; }
+    } else { if (qx === b.minX) nx = -1; else if (qx === b.maxX) nx = 1; else if (qz === b.minZ) nz = -1; else nz = 1; }
+    const lat = ((qx - p.x) * perp.x + (qz - p.z) * perp.z) * s, ahead = (qx - p.x) * fwd.x + (qz - p.z) * fwd.z;
+    if (lat < 5 || lat > 80 || ahead < 3 || ahead > 65) continue;
+    const y = Math.min(b.maxY - 0.6, p.y + 20 + ahead * 0.25);
+    if (y < p.y + 6) continue;
+    const sc = Math.abs(lat - 20) + Math.abs(ahead - 24) * 0.7 - Math.min(y - p.y, 40) * 0.2;
+    if (sc >= bs) continue;
+    const dx = qx + nx * 0.2 - p.x, dy = y - p.y, dz = qz + nz * 0.2 - p.z, dl = Math.hypot(dx, dy, dz);
+    if (rayDist(p, dx / dl, dy / dl, dz / dl, dl) < dl - 1.2) continue;          // something in the way
+    bs = sc; out.p.set(qx, y, qz); out.n.set(nx, 0, nz);
+  }
+  return bs < 1e9;
+}
+function tryTwin() {
+  if (shopIn) return false;
+  const v = P.vel, hs = Math.hypot(v.x, v.z), fwd = camFwdH(_tw);
+  if (hs > 4) { fwd.multiplyScalar(0.6); fwd.x += (v.x / hs) * 0.4; fwd.z += (v.z / hs) * 0.4; fwd.normalize(); }
+  const perp = tv2.set(-fwd.z, 0, fwd.x);
+  if (!sideAnchor(1, fwd, perp, twinA) || !sideAnchor(-1, fwd, perp, twinB) || twinA.p.distanceTo(twinB.p) > 150) return tryAttach();
+  // the two lines meet in a V: swing from the point between them, a little below the lower anchor
+  P.state = 'swing'; P.twin = { l: (twinA.p.x - P.pos.x) * perp.x + (twinA.p.z - P.pos.z) * perp.z > 0 ? twinB.p.clone() : twinA.p.clone(), r: null };
+  P.twin.r = P.twin.l.equals(twinA.p) ? twinB.p.clone() : twinA.p.clone();
+  P.anchor.addVectors(twinA.p, twinB.p).multiplyScalar(0.5); P.anchorN.set(0, -1, 0);
+  P.pivot.copy(P.anchor); P.pivot.y = Math.min(twinA.p.y, twinB.p.y) - 1.5;
+  P.swingDir.copy(fwd);
+  const d0 = P.pivot.distanceTo(P.pos);
+  P.ropeLen = d0 + clamp(d0 * 0.08, 1, 3.5); P.ropeT = 0; P.yank = 1.3;
+  if (hs < 40) { v.x += fwd.x * 5; v.z += fwd.z * 5; }                           // the shot itself throws you forward
+  if (P.trick) endTrick(true);
+  addSplat(twinA.p, twinA.n); addSplat(twinB.p, twinB.n); thwip(); setTimeout(thwip, 70);
+  popTrick('TWIN WEB');
+  return true;
+}
 function release(auto) {
+  P.twin = null;
   P.state = 'air'; P.timeInAir = 0; P.swingArmed = false; P.swingCd = 0.22; P.relT = 0.8;
   const v = P.vel;
   if (v.y > -6 && v.y < 14) v.y += 3.5;
@@ -605,9 +653,10 @@ function step(dt) {
   const shift = shiftDown();
   const swingHeld = swingDown();
   P.swingCd -= dt; P.wallCd -= dt; P.timeInAir += dt; P.landT -= dt; P.rollT -= dt; P.skimT -= dt; P.launchT -= dt; P.relT -= dt;
-  const jumpEv = ev.jump, swingEv = ev.swing, zipEv = ev.zip;
-  ev.jump = ev.swing = ev.zip = false;
+  const jumpEv = ev.jump, swingEv = ev.swing, zipEv = ev.zip, twinEv = ev.twin;
+  ev.jump = ev.swing = ev.zip = ev.twin = false;
   if (swingEv && (P.state === 'air')) P.swingArmed = true;
+  if (twinEv) { if (P.state === 'air' || P.state === 'swing') tryTwin(); else P.twinArmed = true; }   // from the ground: jump first, fire once airborne
   if (zipEv && zipInfo && P.state !== 'zip') startZip(zipInfo);
 
   switch (P.state) {
@@ -634,6 +683,7 @@ function step(dt) {
       const along = v.x * inp.x + v.z * inp.z;
       if (inp.lengthSq() > 0.01 && along < 32) { v.x += inp.x * 16 * dt; v.z += inp.z * 16 * dt; }
       if (v.y < (dive ? -95 : -68)) v.y = dive ? -95 : -68;
+      if (P.twinArmed && P.timeInAir > 0.12) { P.twinArmed = false; tryTwin(); break; }
       if (swingHeld && P.swingCd <= 0 && (P.swingArmed || (P.timeInAir > 0.28 && (v.y < -3 || P.timeInAir > 1.1)))) {
         const hs = Math.hypot(v.x, v.z), f = camFwdH(tv);
         if (hs > 4) f.multiplyScalar(0.5).addScaledVector(tv2.set(v.x / hs, 0, v.z / hs), 0.5).normalize();
@@ -651,7 +701,8 @@ function step(dt) {
       P.swingDir.lerp(want, damp(hasIn ? 2.2 : 0.9, dt)).normalize();
       const dir = tv3.copy(P.swingDir);
       dir.addScaledVector(n, -dir.dot(n));
-      if (dir.lengthSq() > 0.01) { dir.normalize(); const along = v.dot(dir); v.addScaledVector(dir, ((hasIn ? 9 : 5) + clamp((34 - along) * 0.9, 0, 16)) * dt); }
+      const low = clamp((P.pivot.y - p.y) / len, 0, 1), fwdV = v.dot(P.swingDir) > 0 ? 1 : 0;   // how far down the arc, and whether moving the way you steer
+      if (dir.lengthSq() > 0.01) { dir.normalize(); const along = v.dot(dir); v.addScaledVector(dir, ((hasIn ? 9 : 5) + clamp((34 - along) * 0.9, 0, 16)) * dt * low * low * fwdV); }
       // pump at the bottom of the arc for speed (hold forward)
       if (hasIn && v.y < 4 && len > P.ropeLen * 0.96) { const hv = Math.hypot(v.x, v.z); if (hv > 2 && hv < 55) v.addScaledVector(tv3.set(v.x / hv, 0, v.z / hv), 5 * dt); }
       // bleed sideways drift (relative to the steering direction)
@@ -659,13 +710,9 @@ function step(dt) {
       const k = damp(2.2, dt); v.x -= sx * lat * k; v.z -= sz * lat * k;
       // reel in gently; reel fast if the arc would hit the street
       const floor = P.pivot.y - P.ropeLen;
-      P.ropeLen = Math.max(9, P.ropeLen - (floor < 6 ? 6 + (6 - floor) * 3 : 0.8) * dt);
-      if (!swingHeld) release(false);
-      else if (p.y > P.pivot.y - 1.5) release(true);
-      else { // past ~55 degrees forward on the up-swing: let go automatically and carry momentum
-        const fwdOff = (p.x - P.pivot.x) * P.swingDir.x + (p.z - P.pivot.z) * P.swingDir.z;
-        if (v.y > 0 && fwdOff > len * 0.6) release(true);
-      }
+      P.ropeLen = Math.max(9, P.ropeLen - (floor < 6 ? 6 + (6 - floor) * 3 : v.lengthSq() > 9 ? 0.8 : 0) * dt);
+      if (P.twin) v.addScaledVector(P.swingDir, 4 * dt * low);                       // two lines take the load: a deeper, stronger arc
+      if (!swingHeld) release(false);                                              // the web holds until you let go
       break;
     }
     case 'zip': { // hauled along the line, faster and faster, then thrown past the anchor
@@ -789,6 +836,12 @@ function respawn(msg) {
 // ---------------------------------------------------------------- animation
 const XAX = new V3(1, 0, 0);
 function Bl(j, x, y, z, w) { const t = tgt[j]; t[0] += (x - t[0]) * w; t[1] += (y - t[1]) * w; t[2] += (z - t[2]) * w; }
+// the turn a flip or roll puts on the body, in world space, for the first-person view to share; it eases out if a trick is cut short
+const _fq = new THREE.Quaternion(), _fqi = new THREE.Quaternion(), QID = new THREE.Quaternion();
+function flipTo(local, dt) {
+  if (local) { _fqi.copy(P.baseQ).invert(); P.flipQ.copy(P.baseQ).multiply(local).multiply(_fqi); }
+  else if (dt > 0) P.flipQ.slerp(QID, damp(9, dt));
+}
 function updateAnim(dt, time) {
   const v = P.vel, hs = Math.hypot(v.x, v.z), sp = v.length(), st = P.state;
   for (const j of JOINTS) S(j, 0, 0, 0);
@@ -857,7 +910,8 @@ function updateAnim(dt, time) {
     S('spine', lerp(0.22, -0.4, k1) + tuck * 0.5, 0, 0); S('chest', lerp(0.1, -0.22, k1), 0, 0); S('head', lerp(-0.32, 0.18, k1), 0, 0);
     S('hipL', hipx + 0.12 * (1 - k1), 0, 0.08); S('knL', knx + 0.22 * (1 - k1), 0, 0); S('hipR', hipx - 0.1, 0, -0.08); S('knR', knx, 0, 0); sym('ft', 0.6, 0, 0);
     const fa = lerp(1.05, -0.55, k1);
-    if (P.hand === 'R') { aimR = 1; S('shL', fa, 0, 0.6); S('elL', -0.35, 0, 0); } else { aimL = 1; S('shR', fa, 0, -0.6); S('elR', -0.35, 0, 0); }
+    if (P.twin) { aimR = 1; aimL = 1; }
+    else if (P.hand === 'R') { aimR = 1; S('shL', fa, 0, 0.6); S('elL', -0.35, 0, 0); } else { aimL = 1; S('shR', fa, 0, -0.6); S('elR', -0.35, 0, 0); }
     rate = 11;
   } else if (st === 'zip') {
     aimR = 1; aimL = 0.9; S('spine', -0.2, 0, 0); S('chest', -0.1, 0, 0); S('head', -0.35, 0, 0);
@@ -940,8 +994,8 @@ function updateAnim(dt, time) {
   else if (st === 'air' && shiftDown() && v.y < 6 && !tr) { up.copy(v).normalize(); fw.set(0, -1, 0); if (Math.abs(fw.dot(up)) > 0.95) fw.copy(P.facing); orate = 6; }
   else if (st === 'air' && P.launchT > 0 && !tr && v.y > -6 && sp > 12) { up.copy(v).normalize(); up.y += 0.35; up.normalize(); fw.copy(P.facing).multiplyScalar(0.5); fw.y -= 0.85; orate = 9; }
   else if (st === 'air') {
-    const f = clamp(-v.y / 20, 0, 1) * clamp((P.timeInAir - 0.25) / 0.6, 0, 1);
-    fw.copy(P.facing); up.addScaledVector(P.facing, clamp(hs / 60, 0, 0.45) + f * 0.75); up.x += P.facing.z * P.lean; up.z -= P.facing.x * P.lean; up.normalize(); orate = 5.5;
+    const f = clamp(-v.y / 20, 0, 1) * clamp((P.timeInAir - 0.25) / 0.6, 0, 1) * (1 - 0.85 * smooth(C.fp));   // in first person the body stays under you as you drop, legs hanging where you can see them
+    fw.copy(P.facing); up.addScaledVector(P.facing, clamp(hs / 60, 0, 0.45) * (1 - 0.6 * smooth(C.fp)) + f * 0.75); up.x += P.facing.z * P.lean; up.z -= P.facing.x * P.lean; up.normalize(); orate = 5.5;
   } else { // on foot: lean into turns, tip forward with speed
     fw.copy(P.facing); up.x += P.facing.z * P.lean; up.z -= P.facing.x * P.lean; up.addScaledVector(P.facing, clamp(hs / 26, 0, 1) * 0.1); up.normalize(); orate = 14;
   }
@@ -955,10 +1009,10 @@ function updateAnim(dt, time) {
     tr.t += dt; const pp = clamp(tr.t / tr.dur, 0, 1);
     const e = pp < 0.5 ? 2 * pp * pp : 1 - (-2 * pp + 2) ** 2 / 2;
     tq2.setFromAxisAngle(tr.axis, tr.ang * e);
-    hero.quaternion.copy(P.baseQ).multiply(tq2);
+    hero.quaternion.copy(P.baseQ).multiply(tq2); flipTo(tq2, 1);
     if (pp >= 1) endTrick(false);
-  } else if (rolling) { tq2.setFromAxisAngle(XAX, TAU * smooth(clamp(1 - P.rollT / 0.46, 0, 1))); hero.quaternion.copy(P.baseQ).multiply(tq2); }
-  else hero.quaternion.copy(P.baseQ);
+  } else if (rolling) { tq2.setFromAxisAngle(XAX, TAU * smooth(clamp(1 - P.rollT / 0.46, 0, 1))); hero.quaternion.copy(P.baseQ).multiply(tq2); flipTo(tq2, 1); }
+  else { hero.quaternion.copy(P.baseQ); flipTo(null, dt); }
   // body offset (wall: stand on the wall surface; roll: turn over close to the ground)
   const offT = tv3.set(0, 0, 0);
   if (st === 'wall') offT.copy(P.wallN).multiplyScalar(0.5); else if (rolling) offT.set(0, -0.48, 0);
@@ -969,9 +1023,9 @@ function updateAnim(dt, time) {
   // ---- arm aiming at web anchor
   P.aimW += ((aimR ? 1 : 0) - P.aimW) * damp(18, dt);
   P.aimW2 += ((aimL ? 1 : 0) - P.aimW2) * damp(18, dt);
-  const target = st === 'zip' && P.zip ? P.zip.hit : P.anchor;
-  if (P.aimW > 0.01) aimArm(R.shR, R.elR, target, P.aimW * (aimR || 1));
-  if (P.aimW2 > 0.01) aimArm(R.shL, R.elL, target, P.aimW2 * (aimL || 1));
+  const target = st === 'zip' && P.zip ? P.zip.hit : P.anchor, tw = st === 'swing' && P.twin;
+  if (P.aimW > 0.01) aimArm(R.shR, R.elR, tw ? P.twin.r : target, P.aimW * (aimR || 1));
+  if (P.aimW2 > 0.01) aimArm(R.shL, R.elL, tw ? P.twin.l : target, P.aimW2 * (aimL || 1));
   if (P.reachT > 0) aimArm(R.shR, R.elR, P.reachAt, Math.sin(clamp(1 - P.reachT / 0.8, 0, 1) * Math.PI) ** 0.6);   // reaching over a counter
 }
 const _aimA = new V3(), _aimB = new V3(), _hp = new V3();
@@ -1018,7 +1072,7 @@ for (const [key, side] of [['L', 1], ['R', -1]]) {
   sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0); ha.rotation.set(0.3, 0, 0);
   VM.root.add(sh); VM.arms.push({ key, side, sh, el, ha, pos: new V3(side * 0.26, -0.55, 0.3), sho: new V3(side * 0.2, -0.3, 0.05) });
 }
-const vmT = new V3(), vmD = new V3(), vmE = new V3(), vmPole = new V3(), vmQ1 = new THREE.Quaternion(), vmQ2 = new THREE.Quaternion(), vmA = new V3();
+const vmT = new V3(), vmD = new V3(), vmE = new V3(), vmPole = new V3(), vmQ1 = new THREE.Quaternion(), vmQ2 = new THREE.Quaternion(), vmA = new V3(), vmA2 = new V3();
 // where a world point lies from the eyes, as a direction the hands can reach along and still be in the picture
 function vmAim(world, out) {
   out.subVectors(world, camera.position).applyQuaternion(vmQ1.copy(camera.quaternion).invert());
@@ -1029,31 +1083,41 @@ function updateViewArms(dt) {
   const on = C.fp > 0.5 && !mapOpen;
   if (on !== VM.on) { VM.on = on; VM.root.visible = on; }
   if (!on) return;
-  const st = P.state, v = P.vel, hs = Math.hypot(v.x, v.z), k = dt > 0 ? damp(st === 'swing' || st === 'zip' ? 16 : 10, dt) : 0;
+  const st = P.state, v = P.vel, sp = v.length(), swing = st === 'swing';
   if (dt > 0) { // the hands trail a quick look by a moment
     VM.sway.x += (clamp(angDiff(C.yaw, VM.lastYaw) / dt * 0.016, -0.07, 0.07) - VM.sway.x) * damp(8, dt); VM.sway.y += (clamp((C.pitch - VM.lastPitch) / dt * 0.014, -0.05, 0.05) - VM.sway.y) * damp(8, dt);
     VM.lastYaw = C.yaw; VM.lastPitch = C.pitch;
   }
+  // how hard the line is pulling: the arms straighten, the grip shakes, the whole view takes the load
+  const tens = swing ? clamp((sp * sp) / (Math.max(P.ropeLen, 8) * 40) + 0.35, 0, 1.4) : 0, yk = smooth(clamp(P.yank, 0, 1.3) / 1.3);
+  const shk = (tens * 0.006 + yk * 0.02), nx = Math.sin(time * 61.3) * 0.6 + Math.sin(time * 37.1) * 0.4, ny = Math.sin(time * 54.7 + 1.1) * 0.6 + Math.sin(time * 29.3) * 0.4;
   const reach = P.reachT > 0 ? Math.sin(clamp(1 - P.reachT / 0.8, 0, 1) * Math.PI) : 0, dive = st === 'air' && shiftDown() && v.y < 6;
+  const fall = st === 'air' ? clamp((-v.y - 6) / 30, 0, 1) : 0;
+  if (swing && !P.twin) vmAim(P.anchor, vmA);
   for (const A of VM.arms) {
-    const s = A.side, ph = C.bobPh + (s > 0 ? 0 : Math.PI);
-    if (st === 'swing' && P.hand === A.key) { vmAim(P.anchor, vmA); vmT.set(s * 0.16, -0.2, 0.12).addScaledVector(vmA, 0.5); }                 // the hand on the web
-    else if (st === 'zip' && P.zip) { vmAim(P.zip.hit, vmA); vmT.set(s * 0.1, -0.18, 0.1).addScaledVector(vmA, 0.52); }                         // both hands hauling on the line
-    else if (st === 'swing') vmT.set(s * 0.33, -0.34 + Math.sin(P.swingPhase || 0) * 0.02, 0.42);                                              // the free hand, out for balance
-    else if (dive) vmT.set(s * 0.12, -0.17, 0.64);                                                                                             // arms ahead in a dive
-    else if (st === 'air' || st === 'wall') vmT.set(s * 0.36, -0.3 + clamp(v.y * 0.004, -0.06, 0.08), 0.46);
-    else vmT.set(s * 0.25, -0.52 + C.bobK * 0.17 + Math.sin(ph) * 0.075 * C.bobK, 0.38 + Math.cos(ph) * 0.07 * C.bobK);                         // out of sight when you stand, pumping into view as you run
-    if (reach > 0 && s < 0) vmT.lerp(vmD.set(-0.08, -0.12, 0.62), reach);                                                                      // reaching over a counter
+    const s = A.side, ph = C.bobPh + (s > 0 ? 0 : Math.PI), top = P.hand === A.key;
+    let k = 9;
+    if (swing && P.twin) { // a hand on each line
+      vmAim(s > 0 ? P.twin.l : P.twin.r, vmD); vmT.set(s * 0.17, -0.2, 0.1).addScaledVector(vmD, 0.54 + tens * 0.04); k = 11;
+    } else if (swing) { // both hands on the one line, one above the other
+      vmT.set(0, -0.22, 0.1).addScaledVector(vmA, top ? 0.6 + tens * 0.04 : 0.4); vmT.x += s * 0.045; k = 11;
+    } else if (st === 'zip' && P.zip) { vmAim(P.zip.hit, vmD); vmT.set(s * 0.08, -0.2, 0.1).addScaledVector(vmD, top ? 0.58 : 0.44); k = 14; }
+    else if (dive) { vmT.set(s * 0.13, -0.18, 0.62); k = 6; }
+    else if (st === 'air' || st === 'wall') vmT.set(s * (0.4 + fall * 0.06), -0.5 + fall * 0.16 + Math.sin(time * 2.1 + s) * 0.015, 0.36);   // low at the sides, drifting up into the corners as you drop
+    else vmT.set(s * 0.26, -0.62 + C.bobK * 0.16 + Math.sin(ph) * 0.06 * C.bobK, 0.36 + Math.cos(ph) * 0.06 * C.bobK);                          // out of sight at rest, glimpsed at the bottom edge as you run
+    if (swing) { vmT.y -= yk * 0.16; vmT.x += nx * shk * s; vmT.y += ny * shk; }                                                                  // the line takes your weight with a jolt
+    if (reach > 0 && s < 0) vmT.lerp(vmD.set(-0.08, -0.12, 0.62), reach);
     vmT.x += VM.sway.x; vmT.y += VM.sway.y;
-    if (k > 0) A.pos.lerp(vmT, k);
+    if (dt > 0) A.pos.lerp(vmT, damp(k, dt));
     // two bones from shoulder to hand, the elbow hanging down and a little outward
     const L1 = 0.285, L2 = 0.262, S = A.sho;
     vmD.subVectors(A.pos, S); let len = vmD.length(); const mx = (L1 + L2) * 0.985; if (len > mx) { vmD.multiplyScalar(mx / len); len = mx; } if (len < 0.12) { vmD.set(0, -0.12, 0); len = 0.12; }
     const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
     vmE.copy(vmD).multiplyScalar(1 / len); vmPole.set(s * 0.75, -1, -0.3); vmPole.addScaledVector(vmE, -vmPole.dot(vmE)).normalize();
-    vmE.multiplyScalar(a).addScaledVector(vmPole, h);                                                                                          // elbow, relative to the shoulder
-    A.sh.position.copy(S); vmQ1.setFromUnitVectors(DOWN, vmA.copy(vmE).normalize()); A.sh.quaternion.copy(vmQ1);
-    vmQ2.setFromUnitVectors(DOWN, vmA.subVectors(vmD, vmE).normalize()); A.el.quaternion.copy(vmQ1).invert().multiply(vmQ2);
+    vmE.multiplyScalar(a).addScaledVector(vmPole, h);
+    A.sh.position.copy(S); vmQ1.setFromUnitVectors(DOWN, vmA2.copy(vmE).normalize()); A.sh.quaternion.copy(vmQ1);
+    vmQ2.setFromUnitVectors(DOWN, vmA2.subVectors(vmD, vmE).normalize()); A.el.quaternion.copy(vmQ1).invert().multiply(vmQ2);
+    A.ha.rotation.set(swing || st === 'zip' ? 0.9 : 0.3, 0, swing ? s * 0.4 : 0);                                                                 // wrists cocked round the line
   }
   camera.updateMatrixWorld(true);
 }
@@ -1061,32 +1125,35 @@ function updateViewArms(dt) {
 let ghostOn = false, bodyMeshes = null;
 function setBodyGhost(on) {
   if (on === ghostOn) return; ghostOn = on;
-  if (!bodyMeshes) { bodyMeshes = []; hero.traverse((o) => { if (o.isMesh) bodyMeshes.push(o); }); }
+  if (!bodyMeshes) { bodyMeshes = []; const keep = new Set([R.hipL, R.knL, R.ftL, R.hipR, R.knR, R.ftR]); hero.traverse((o) => { if (o.isMesh && !keep.has(o.parent)) bodyMeshes.push(o); }); }   // the legs stay: look down and they are there
   for (const m of bodyMeshes) {
     if (!m.userData.solid) { m.userData.solid = m.material; const g = m.material.clone(); g.colorWrite = false; g.depthWrite = false; m.userData.ghost = g; }
     m.material = on ? m.userData.ghost : m.userData.solid;
   }
 }
 
+const rope2 = rope.clone(true); rope2.visible = false; scene.add(rope2);
+const _hp2 = new V3();
 function updateRope(dt) {
-  let show = false;
+  let show = false, show2 = false;
   const hp = _hp, fp = VM.on;
-  const hand = (key) => { // in first person the web leaves the hand you can see
-    if (fp) { const A = VM.arms[key === 'L' ? 0 : 1]; A.ha.getWorldPosition(hp); return; }
-    (key === 'R' ? R.handR : R.handL).getWorldPosition(hp);
+  const hand = (key, out, low) => { // in first person the line runs from the lower of the two gripping hands
+    if (fp) { const A = VM.arms[key === 'L' ? 0 : 1], B = VM.arms[key === 'L' ? 1 : 0]; (low && P.state === 'swing' && !P.twin ? B : A).ha.getWorldPosition(out); return out; }
+    return (key === 'R' ? R.handR : R.handL).getWorldPosition(out);
   };
   if (P.state === 'swing') {
-    hand(P.hand === 'R' ? 'R' : 'L'); show = true;
-    P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
-    setRope(hp, P.anchor, P.ropeT);
+    P.ropeT = Math.min(1, P.ropeT + dt / 0.08); show = true;
+    if (P.twin) { setRope(rope, hand('R', hp), P.twin.r, P.ropeT); setRope(rope2, hand('L', _hp2), P.twin.l, P.ropeT); show2 = true; }
+    else setRope(rope, hand(P.hand === 'R' ? 'R' : 'L', hp, true), P.anchor, P.ropeT);
   } else if (P.state === 'zip' && P.zip) {
-    hand('R'); show = true; P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
-    setRope(hp, P.zip.hit, P.ropeT);
+    hand('R', hp); show = true; P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
+    setRope(rope, hp, P.zip.hit, P.ropeT);
   }
-  rope.visible = show;
+  rope.visible = show; rope2.visible = show2;
+  if (dt > 0) P.yank = Math.max(0, P.yank - dt * 2.6);
   for (const s of splats) if (s.visible) { s.userData.t -= dt; s.material.opacity = clamp(s.userData.t, 0, 1); if (s.userData.t <= 0) s.visible = false; }
 }
-function setRope(a, b, t) {
+function setRope(rope, a, b, t) {
   const d = tv.subVectors(b, a); const len = d.length(); d.divideScalar(len);
   rope.position.copy(a); rope.quaternion.setFromUnitVectors(UP, d); rope.scale.set(0.5, len * t, 0.5);
   webLineTex.repeat.y = Math.max(1, (len * t) / 1.3);
@@ -1106,7 +1173,7 @@ function rayDist(o, dx, dy, dz, maxT) { // nearest solid surface along a ray (no
   if (dy < -1e-4 && o.y > 0.5) { const tg = (o.y - 0.5) / -dy; if (tg < best && world.groundAt(o.x + dx * tg, o.z + dz * tg)) best = tg; }
   return best;
 }
-const fpEye = new V3(), fpSteady = new V3(), fpUp = new V3();
+const fpEye = new V3(), fpSteady = new V3(), fpUp = new V3(), fpFq = new THREE.Quaternion();
 function updateCamera(dt, now, time) {
   const v = P.vel, sp = v.length(), hs = Math.hypot(v.x, v.z), st = P.state;
   if (now - lastMouse > 2200 && (st === 'swing' || st === 'air' || st === 'zip') && hs > 10) {
@@ -1160,12 +1227,12 @@ function updateCamera(dt, now, time) {
   if (C.fp > 0) {
     hero.visible = true;
     fpEye.set(0, 0.115, 0.1).applyMatrix4(R.head.matrixWorld);
-    fpSteady.copy(P.rpos).add(P.offset); fpSteady.y += 0.67 - P.perch * 0.45; fpSteady.addScaledVector(P.facing, 0.07);
-    fpEye.lerp(fpSteady, P.trick || P.rollT > 0 ? 0.75 : 0.5);            // most of the body's motion, not all of it: a flip should not turn the stomach
+    fpSteady.set(0, 0.67 - P.perch * 0.45, 0).addScaledVector(P.facing, 0.07).applyQuaternion(P.flipQ).add(P.rpos).add(P.offset);   // the steady eye turns with a flip too
+    fpEye.lerp(fpSteady, 0.5);            // most of the body's motion, not all of it: a flip should not turn the stomach
     if (st === 'ground' && dt > 0) C.bobPh += dt * (5.5 + hs * 0.95);
     C.bobK += ((st === 'ground' ? clamp(hs / 7, 0, 1) : 0) - C.bobK) * damp(6, dt);
     const bx = Math.sin(C.bobPh) * 0.012 * C.bobK;                          // the sway and dip of each stride, and the give in the knees on landing
-    fpEye.y += Math.sin(C.bobPh * 2) * 0.017 * C.bobK - smooth(C.kick) * 0.08; fpEye.x += rx * bx; fpEye.z += rz * bx;
+    fpEye.y += Math.sin(C.bobPh * 2) * 0.017 * C.bobK - smooth(C.kick) * 0.08 - smooth(clamp(P.yank, 0, 1)) * 0.13;   // the drop as the line takes your weight fpEye.x += rx * bx; fpEye.z += rz * bx;
     camPos.lerp(fpEye, smooth(C.fp));
     fpUp.set(0, 1, 0).applyQuaternion(P.baseQ); fpBank = clamp((fpUp.x * rx + fpUp.z * rz) * 0.2, -0.14, 0.14) * smooth(C.fp);   // the horizon tips as the body banks through a swing
   }
@@ -1180,8 +1247,17 @@ function updateCamera(dt, now, time) {
   camera.position.set(camPos.x + rx * nx * sh * 0.22, camPos.y + ny * sh * 0.22 + still * Math.sin(time * 1.1) * 0.012, camPos.z + rz * nx * sh * 0.22);
   camera.lookAt(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
   camera.rotateZ(-C.roll * (1 + 0.25 * C.fp) - fpBank + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
+  if (C.fp > 0) { // on the line the view is hauled toward the anchor and shivers with the load; a flip or roll turns the whole view with the body
+    const load = st === 'swing' ? clamp((sp * sp) / (Math.max(P.ropeLen, 8) * 40), 0, 1.2) : 0, yk = smooth(clamp(P.yank, 0, 1));
+    camera.rotateX((-yk * 0.06 + Math.sin(time * 58.3) * load * 0.0025) * smooth(C.fp)); camera.rotateZ(Math.sin(time * 49.1 + 0.7) * load * 0.002 * smooth(C.fp));
+    if (P.flipQ.w < 0.99999) { fpFq.slerpQuaternions(QID, P.flipQ, smooth(C.fp)); camera.quaternion.premultiply(fpFq); }
+  }
   if (sh > 0.001) camera.rotateX(ny * sh * 0.014);
-  const fov = lerp(62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3, 80 + clamp((sp - 14) / 56, 0, 1) * 15 + smooth(C.kick) * 5, smooth(C.fp));
+  // a little wider where the moment calls for it: a long drop, the bottom of a fast swing, high over the city, out over open water or park
+  if ((C.areaT -= dt) <= 0) { C.areaT = 0.3; const z = world.zoneAt(P.pos.x, P.pos.z); C.areaW = /RIVER|HARBOR|CENTRAL PARK|BATTERY/.test(z) ? 1 : 0; }
+  C.area = (C.area || 0) + ((C.areaW || 0) - (C.area || 0)) * damp(1.2, dt);
+  const extra = clamp((-v.y - 16) / 34, 0, 1) * 6 + (st === 'swing' ? clamp((sp - 24) / 30, 0, 1) * clamp((P.pivot.y - P.pos.y) / Math.max(P.ropeLen, 1), 0, 1) * 5 : 0) + clamp((P.pos.y - 110) / 220, 0, 1) * 3 + C.area * 3 + smooth(clamp(P.yank, 0, 1)) * 3;
+  const fov = lerp(62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3, 80 + clamp((sp - 14) / 56, 0, 1) * 15 + smooth(C.kick) * 5, smooth(C.fp)) + extra * (1 - smooth(C.cine));
   C.fov += (fov - C.fov) * damp(3, dt);
   const nearW = 0.25 - 0.15 * C.fp;                                         // close enough to see your own hands
   if (Math.abs(camera.fov - C.fov) > 0.01 || (MAPV.k === 0 && Math.abs(camera.near - nearW) > 1e-3)) { camera.fov = C.fov; if (MAPV.k === 0) camera.near = nearW; camera.updateProjectionMatrix(); }
@@ -2037,4 +2113,4 @@ function audioDbg() {
 }
 function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
 let blurK = 0;
-window.__G = { setFP: (v) => { FP = v; },  sky, setHaze, TOD, getFinal: () => finalPass, storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
+window.__G = { setFP: (v) => { FP = v; }, startTrick,  sky, setHaze, TOD, getFinal: () => finalPass, storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
