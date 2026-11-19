@@ -540,6 +540,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     if (nightK > 0.5) { motes.visible = !!park && cy < 60; MU.uCol.value.setRGB(0.8, 1.0, 0.3); MU.uA.value = 0.95; MU.uBlink.value = 1; MU.uPx.value = 90; }
     else if (park) { motes.visible = true; MU.uCol.value.setRGB(0.95, 0.7, 0.22); MU.uA.value = 0.55; MU.uBlink.value = 0; MU.uPx.value = 120; MU.uFall.value = 0.8; }   // leaves coming down
     else { motes.visible = true; MU.uCol.value.setRGB(1, 0.86, 0.62); MU.uA.value = 0.22; MU.uBlink.value = 0; MU.uPx.value = 55; MU.uFall.value = 0; }
+    if (fpOn) { MU.uA.value *= 0.3; MU.uPx.value *= 0.7; }   // dust is distracting right in front of the eyes
     CU.uTc.value = time % CYC; CU.uN.value = Math.floor(time / CYC); PU.uT.value = time;
     timer -= dt;
     let dy = yaw - lastYaw; dy = Math.abs(Math.atan2(Math.sin(dy), Math.cos(dy)));
@@ -566,5 +567,6 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   function setQuality(q) { Object.assign(Q, q); timer = -1; }
   function setNight(k) { nightK = k; CU.uHead.value = 0.18 + k * 1.5; CU.uTail.value = 0.8 + k * 0.9; birds.visible = k < 0.5; if (steam) steam.material.opacity = 0.3 - k * 0.12; }
   function refresh() { timer = -1; }
-  return { update, setQuality, setNight, refresh, carAt, info, stats: { cars: NC, peds: NPED } };
+  let fpOn = false;
+  return { update, setQuality, setNight, refresh, carAt, info, setFP(v) { fpOn = v; }, stats: { cars: NC, peds: NPED } };
 }

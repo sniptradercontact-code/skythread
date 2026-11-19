@@ -985,16 +985,102 @@ function aimArm(sh, el, targetW, w) {
   sh.updateMatrixWorld(true);
 }
 
-// swing hand override: when swinging with left, aim left arm instead
+// ---------------------------------------------------------------- the web: a bright core wrapped in two twisted filaments, laced with cross-threads
+const webLineTex = (() => {
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const g = cv.getContext('2d');
+  const fx = (y, s) => 32 + s * 21 * Math.sin((y / 256) * TAU * 2);
+  g.lineCap = 'round';
+  for (let y = 0; y < 256; y += 10) { // the lacing between the filaments, a little uneven like the real thing
+    const s = (y / 10) % 2 ? 1 : -1, y2 = y + 6 + ((y * 7) % 5);
+    g.strokeStyle = 'rgba(235,245,255,0.7)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(fx(y, s), y); g.lineTo(32, (y + y2) / 2); g.lineTo(fx(y2, -s), y2); g.stroke();
+  }
+  for (const s of [-1, 1]) { g.strokeStyle = 'rgba(240,248,255,0.95)'; g.lineWidth = 2.8; g.beginPath(); for (let y = -2; y <= 258; y += 2) { if (y === -2) g.moveTo(fx(y, s), y); else g.lineTo(fx(y, s), y); } g.stroke(); }
+  g.shadowColor = 'rgba(190,225,255,0.9)'; g.shadowBlur = 5; g.strokeStyle = '#ffffff'; g.lineWidth = 7; g.beginPath(); g.moveTo(32, -4); g.lineTo(32, 260); g.stroke(); g.shadowBlur = 0;
+  for (let y = 0; y < 256; y += 32) { g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath(); g.arc(32, y + 16, 5, 0, TAU); g.fill(); }   // beads of glue where the strands cross
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+})();
+const webRibMat = new THREE.MeshBasicMaterial({ map: webLineTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, color: 0xeef7ff });
+for (const ry of [0, Math.PI / 2]) { // two crossed ribbons read as a strand from any side; they ride on the core line and stretch with it
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 1).translate(0, 0.5, 0).rotateY(ry), webRibMat); m.frustumCulled = false; m.renderOrder = 3; rope.add(m);
+}
+
+// ---------------------------------------------------------------- first-person arms
+// The hero's own arms, copied and hung in front of the eyes. They are posed for the picture, not for anatomy: whatever the body
+// is doing, you see your hands at work, and the web leaves the hand you can see. They are drawn in a sliver of the depth range
+// of their own, so they can never cut into a wall, and the real body is left out of the picture (it still casts the shadow).
+scene.add(camera);
+const VM = { root: new THREE.Group(), arms: [], lastYaw: 0, lastPitch: 0, sway: new V3(), on: false };
+VM.root.rotation.y = Math.PI; VM.root.visible = false; camera.add(VM.root);      // inside this group x is your left, y up, z ahead
+const vmNear = (r) => r.getContext().depthRange(0, 0.05), vmFar = (r) => r.getContext().depthRange(0, 1);
+for (const [key, side] of [['L', 1], ['R', -1]]) {
+  const sh = R['sh' + key].clone(true), el = sh.children.find((c) => c.isGroup), ha = el.children.find((c) => c.isGroup);
+  sh.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; o.renderOrder = 900; o.onBeforeRender = vmNear; o.onAfterRender = vmFar; } });
+  sh.rotation.set(0, 0, 0); el.rotation.set(0, 0, 0); ha.rotation.set(0.3, 0, 0);
+  VM.root.add(sh); VM.arms.push({ key, side, sh, el, ha, pos: new V3(side * 0.26, -0.55, 0.3), sho: new V3(side * 0.2, -0.3, 0.05) });
+}
+const vmT = new V3(), vmD = new V3(), vmE = new V3(), vmPole = new V3(), vmQ1 = new THREE.Quaternion(), vmQ2 = new THREE.Quaternion(), vmA = new V3();
+// where a world point lies from the eyes, as a direction the hands can reach along and still be in the picture
+function vmAim(world, out) {
+  out.subVectors(world, camera.position).applyQuaternion(vmQ1.copy(camera.quaternion).invert());
+  out.set(-out.x, out.y, -out.z).normalize();
+  return out.set(clamp(out.x, -0.72, 0.72), clamp(out.y, -0.2, 0.68), Math.max(out.z, 0.52)).normalize();
+}
+function updateViewArms(dt) {
+  const on = C.fp > 0.5 && !mapOpen;
+  if (on !== VM.on) { VM.on = on; VM.root.visible = on; }
+  if (!on) return;
+  const st = P.state, v = P.vel, hs = Math.hypot(v.x, v.z), k = dt > 0 ? damp(st === 'swing' || st === 'zip' ? 16 : 10, dt) : 0;
+  if (dt > 0) { // the hands trail a quick look by a moment
+    VM.sway.x += (clamp(angDiff(C.yaw, VM.lastYaw) / dt * 0.016, -0.07, 0.07) - VM.sway.x) * damp(8, dt); VM.sway.y += (clamp((C.pitch - VM.lastPitch) / dt * 0.014, -0.05, 0.05) - VM.sway.y) * damp(8, dt);
+    VM.lastYaw = C.yaw; VM.lastPitch = C.pitch;
+  }
+  const reach = P.reachT > 0 ? Math.sin(clamp(1 - P.reachT / 0.8, 0, 1) * Math.PI) : 0, dive = st === 'air' && shiftDown() && v.y < 6;
+  for (const A of VM.arms) {
+    const s = A.side, ph = C.bobPh + (s > 0 ? 0 : Math.PI);
+    if (st === 'swing' && P.hand === A.key) { vmAim(P.anchor, vmA); vmT.set(s * 0.16, -0.2, 0.12).addScaledVector(vmA, 0.5); }                 // the hand on the web
+    else if (st === 'zip' && P.zip) { vmAim(P.zip.hit, vmA); vmT.set(s * 0.1, -0.18, 0.1).addScaledVector(vmA, 0.52); }                         // both hands hauling on the line
+    else if (st === 'swing') vmT.set(s * 0.33, -0.34 + Math.sin(P.swingPhase || 0) * 0.02, 0.42);                                              // the free hand, out for balance
+    else if (dive) vmT.set(s * 0.12, -0.17, 0.64);                                                                                             // arms ahead in a dive
+    else if (st === 'air' || st === 'wall') vmT.set(s * 0.36, -0.3 + clamp(v.y * 0.004, -0.06, 0.08), 0.46);
+    else vmT.set(s * 0.25, -0.52 + C.bobK * 0.17 + Math.sin(ph) * 0.075 * C.bobK, 0.38 + Math.cos(ph) * 0.07 * C.bobK);                         // out of sight when you stand, pumping into view as you run
+    if (reach > 0 && s < 0) vmT.lerp(vmD.set(-0.08, -0.12, 0.62), reach);                                                                      // reaching over a counter
+    vmT.x += VM.sway.x; vmT.y += VM.sway.y;
+    if (k > 0) A.pos.lerp(vmT, k);
+    // two bones from shoulder to hand, the elbow hanging down and a little outward
+    const L1 = 0.285, L2 = 0.262, S = A.sho;
+    vmD.subVectors(A.pos, S); let len = vmD.length(); const mx = (L1 + L2) * 0.985; if (len > mx) { vmD.multiplyScalar(mx / len); len = mx; } if (len < 0.12) { vmD.set(0, -0.12, 0); len = 0.12; }
+    const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len), h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    vmE.copy(vmD).multiplyScalar(1 / len); vmPole.set(s * 0.75, -1, -0.3); vmPole.addScaledVector(vmE, -vmPole.dot(vmE)).normalize();
+    vmE.multiplyScalar(a).addScaledVector(vmPole, h);                                                                                          // elbow, relative to the shoulder
+    A.sh.position.copy(S); vmQ1.setFromUnitVectors(DOWN, vmA.copy(vmE).normalize()); A.sh.quaternion.copy(vmQ1);
+    vmQ2.setFromUnitVectors(DOWN, vmA.subVectors(vmD, vmE).normalize()); A.el.quaternion.copy(vmQ1).invert().multiply(vmQ2);
+  }
+  camera.updateMatrixWorld(true);
+}
+// the real body: out of the picture in first person, still in the shadow map
+let ghostOn = false, bodyMeshes = null;
+function setBodyGhost(on) {
+  if (on === ghostOn) return; ghostOn = on;
+  if (!bodyMeshes) { bodyMeshes = []; hero.traverse((o) => { if (o.isMesh) bodyMeshes.push(o); }); }
+  for (const m of bodyMeshes) {
+    if (!m.userData.solid) { m.userData.solid = m.material; const g = m.material.clone(); g.colorWrite = false; g.depthWrite = false; m.userData.ghost = g; }
+    m.material = on ? m.userData.ghost : m.userData.solid;
+  }
+}
+
 function updateRope(dt) {
   let show = false;
-  const hp = _hp;
+  const hp = _hp, fp = VM.on;
+  const hand = (key) => { // in first person the web leaves the hand you can see
+    if (fp) { const A = VM.arms[key === 'L' ? 0 : 1]; A.ha.getWorldPosition(hp); return; }
+    (key === 'R' ? R.handR : R.handL).getWorldPosition(hp);
+  };
   if (P.state === 'swing') {
-    (P.hand === 'R' ? R.handR : R.handL).getWorldPosition(hp); show = true;
+    hand(P.hand === 'R' ? 'R' : 'L'); show = true;
     P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
     setRope(hp, P.anchor, P.ropeT);
   } else if (P.state === 'zip' && P.zip) {
-    R.handR.getWorldPosition(hp); show = true; P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
+    hand('R'); show = true; P.ropeT = Math.min(1, P.ropeT + dt / 0.08);
     setRope(hp, P.zip.hit, P.ropeT);
   }
   rope.visible = show;
@@ -1002,7 +1088,8 @@ function updateRope(dt) {
 }
 function setRope(a, b, t) {
   const d = tv.subVectors(b, a); const len = d.length(); d.divideScalar(len);
-  rope.position.copy(a); rope.quaternion.setFromUnitVectors(UP, d); rope.scale.set(1, len * t, 1);
+  rope.position.copy(a); rope.quaternion.setFromUnitVectors(UP, d); rope.scale.set(0.5, len * t, 0.5);
+  webLineTex.repeat.y = Math.max(1, (len * t) / 1.3);
 }
 
 // ---------------------------------------------------------------- camera
@@ -1020,15 +1107,6 @@ function rayDist(o, dx, dy, dz, maxT) { // nearest solid surface along a ray (no
   return best;
 }
 const fpEye = new V3(), fpSteady = new V3(), fpUp = new V3();
-const headMeshes = []; R.head.traverse((o) => { if (o.isMesh) headMeshes.push(o); });
-let ghostOn = false;
-function setHeadGhost(on) { // drawn into the shadow map, not into the picture
-  if (on === ghostOn) return; ghostOn = on;
-  for (const m of headMeshes) {
-    if (!m.userData.solid) { m.userData.solid = m.material; const g = m.material.clone(); g.colorWrite = false; g.depthWrite = false; m.userData.ghost = g; }
-    m.material = on ? m.userData.ghost : m.userData.solid;
-  }
-}
 function updateCamera(dt, now, time) {
   const v = P.vel, sp = v.length(), hs = Math.hypot(v.x, v.z), st = P.state;
   if (now - lastMouse > 2200 && (st === 'swing' || st === 'air' || st === 'zip') && hs > 10) {
@@ -1083,15 +1161,15 @@ function updateCamera(dt, now, time) {
     hero.visible = true;
     fpEye.set(0, 0.115, 0.1).applyMatrix4(R.head.matrixWorld);
     fpSteady.copy(P.rpos).add(P.offset); fpSteady.y += 0.67 - P.perch * 0.45; fpSteady.addScaledVector(P.facing, 0.07);
-    fpEye.lerp(fpSteady, P.trick || P.rollT > 0 ? 0.62 : 0.3);            // most of the body's motion, not all of it: a flip should not turn the stomach
+    fpEye.lerp(fpSteady, P.trick || P.rollT > 0 ? 0.75 : 0.5);            // most of the body's motion, not all of it: a flip should not turn the stomach
     if (st === 'ground' && dt > 0) C.bobPh += dt * (5.5 + hs * 0.95);
     C.bobK += ((st === 'ground' ? clamp(hs / 7, 0, 1) : 0) - C.bobK) * damp(6, dt);
-    const bx = Math.sin(C.bobPh) * 0.02 * C.bobK;                          // the sway and dip of each stride, and the give in the knees on landing
-    fpEye.y += Math.sin(C.bobPh * 2) * 0.028 * C.bobK - smooth(C.kick) * 0.1; fpEye.x += rx * bx; fpEye.z += rz * bx;
+    const bx = Math.sin(C.bobPh) * 0.012 * C.bobK;                          // the sway and dip of each stride, and the give in the knees on landing
+    fpEye.y += Math.sin(C.bobPh * 2) * 0.017 * C.bobK - smooth(C.kick) * 0.08; fpEye.x += rx * bx; fpEye.z += rz * bx;
     camPos.lerp(fpEye, smooth(C.fp));
-    fpUp.set(0, 1, 0).applyQuaternion(P.baseQ); fpBank = clamp((fpUp.x * rx + fpUp.z * rz) * 0.3, -0.22, 0.22) * smooth(C.fp);   // the horizon tips as the body banks through a swing
+    fpUp.set(0, 1, 0).applyQuaternion(P.baseQ); fpBank = clamp((fpUp.x * rx + fpUp.z * rz) * 0.2, -0.14, 0.14) * smooth(C.fp);   // the horizon tips as the body banks through a swing
   }
-  setHeadGhost(C.fp > 0.5);
+  setBodyGhost(C.fp > 0.5);
 
   // gentle life in the lens: bank with sideways motion, a rumble at speed, a jolt on impact, a slow breath when still
   const latV = v.x * rx + v.z * rz;
@@ -1101,12 +1179,13 @@ function updateCamera(dt, now, time) {
   const nx = Math.sin(time * 53.1) * 0.6 + Math.sin(time * 31.7 + 1.3) * 0.4, ny = Math.sin(time * 47.3 + 2.1) * 0.6 + Math.sin(time * 27.9) * 0.4;
   camera.position.set(camPos.x + rx * nx * sh * 0.22, camPos.y + ny * sh * 0.22 + still * Math.sin(time * 1.1) * 0.012, camPos.z + rz * nx * sh * 0.22);
   camera.lookAt(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
-  camera.rotateZ(-C.roll * (1 + 0.6 * C.fp) - fpBank + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
+  camera.rotateZ(-C.roll * (1 + 0.25 * C.fp) - fpBank + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
   if (sh > 0.001) camera.rotateX(ny * sh * 0.014);
   const fov = lerp(62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3, 80 + clamp((sp - 14) / 56, 0, 1) * 15 + smooth(C.kick) * 5, smooth(C.fp));
   C.fov += (fov - C.fov) * damp(3, dt);
   const nearW = 0.25 - 0.15 * C.fp;                                         // close enough to see your own hands
   if (Math.abs(camera.fov - C.fov) > 0.01 || (MAPV.k === 0 && Math.abs(camera.near - nearW) > 1e-3)) { camera.fov = C.fov; if (MAPV.k === 0) camera.near = nearW; camera.updateProjectionMatrix(); }
+  updateViewArms(dt);
 }
 // keep the sun's shadow box around the action, moving it in whole texels so shadow edges never crawl
 const _sr = new V3(), _su = new V3(), _sc = new V3();
@@ -1316,10 +1395,10 @@ const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType 
 const cubeCam = new THREE.CubeCamera(2, 9000, cubeRT);
 let cityEnv = null;
 function captureEnv() { // used only by the building facades; everything else keeps the clean sky
-  const hv = hero.visible; hero.visible = false; setHaze(2.5);
+  const hv = hero.visible, vv = VM.root.visible; hero.visible = false; VM.root.visible = false; setHaze(2.5);
   cubeCam.position.set(P.rpos.x, 240, P.rpos.z);
   cubeCam.update(renderer, scene);
-  hero.visible = hv; setHaze(1);
+  hero.visible = hv; VM.root.visible = vv; setHaze(1);
   const rt = pmrem.fromCubemap(cubeRT.texture);
   if (cityEnv) cityEnv.dispose();
   cityEnv = rt; world.facadeMat.envMap = rt.texture; world.facadeMat.envMapIntensity = TOD[todIdx].env * 1.5; world.facadeMat.needsUpdate = true;
@@ -1927,6 +2006,7 @@ $('fade').classList.add('out');
   try { life.update(dt, time, lc.x, shopIn ? 2 : lc.y, lc.z, C.yaw, zoneNow === 'CENTRAL PARK' || zoneNow === 'BATTERY PARK'); } catch (e) { reportOnce(e); }
   if ((zipTick = (zipTick + 1) % 3) === 0) computeZip();
   updateRope(paused ? 0 : dt);
+  life.setFP(C.fp > 0.5);
   try { updateHUD(dt, rawDt); } catch (e) { reportOnce(e); }
   try { updateAudio(paused ? 0 : dt); } catch (e) { reportOnce(e); }
   autoQuality(Math.min(rawDt, 1));   // real time, so slow frames are measured as slow
