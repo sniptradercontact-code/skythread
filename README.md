@@ -3,13 +3,21 @@
 A 3D web-swinging sandbox game that runs in the browser. The whole game ships as one
 self-contained `index.html` - open it locally or host it anywhere static.
 
-The city is a compressed take on Manhattan: a long island with wide one-way avenues and
-narrow cross streets, a Downtown and a Midtown skyscraper cluster (towers up to ~540 m),
-brick districts between them, a big central park, suspension bridges over both rivers,
-a harbor with an island and a statue, and low-rise outer boroughs that run out to hills
-on the horizon. Streets carry signal-controlled traffic (sedans, taxis, SUVs, vans,
-trucks, buses, parked cars); people walk the sidewalks, cross with the lights and
+The city is Manhattan at its real size: an island 3.5 km across and 21 km long, laid out
+on the real grid (blocks 250 m by 80 m, twenty streets to the mile, 14 avenues, about
+2,800 blocks), with the Financial District and Midtown skyscraper clusters, a full-size
+Central Park, suspension bridges over the East River, the great span over the Hudson,
+low bridges over the Harlem River, a harbor with an island and a statue, and the outer
+boroughs on every side. Streets carry signal-controlled traffic (sedans, taxis, SUVs,
+vans, trucks, buses, parked cars); people walk the sidewalks, cross with the lights and
 jaywalk through stopped traffic.
+
+The skyline for the whole island is built once at start-up; street-level detail (trees,
+lamps, street furniture, rooftop clutter, shop light) is generated around you as you
+move and released behind you, so the city never ends but only the part near you is held
+in memory. Every block is seeded from its own grid position, so it is always the same
+block. Buildings draw from 22 facade styles with their own bay widths, tints, blinds and
+lit windows; billboards and lettered rooftop signs carry invented brands.
 
 Four shops can be entered on foot (a bodega, a pizzeria, a coffee shop and a camera
 shop), each with its own interior and staff, and a short seven-step story, LAST ORDERS,
@@ -44,7 +52,7 @@ Open `index.html` in a browser, click to start.
 | X | restart |
 | G | graphics quality (auto-tunes toward 100 FPS until you change it) |
 | T | time of day (golden hour / midday / night) |
-| M | city map: drag to turn, scroll to zoom; click a time trial (or 1-4) to see its route, click again or Enter to start |
+| M | city map: drag to move, scroll to zoom (out to the whole island); click a time trial (or 1-4) to see its route, click again or Enter to start |
 | K | switch suit trim (after finishing the story) |
 | N | mute |
 | H | toggle help |

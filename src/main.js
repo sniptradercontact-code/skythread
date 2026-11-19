@@ -27,7 +27,7 @@ THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
 	vec3 hzCol = fogColor * mix( vec3( 0.84, 0.92, 1.07 ), vec3( 1.0 ), hzS ) + fogColor * vec3( 1.0, 0.7, 0.4 ) * ( hzGlow * ( 0.3 * hzS2 + 0.85 * hzS2 * hzS2 * hzS2 * hzS2 ) );
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, hzCol, fogFactor );
 #endif`;
-import { buildWorld, boxes, query, addBox, makeWebTex, rnd, CYC, AVE_GO, ST_T0, ST_GO, cellX, cellZ, HALFX, HALFZ, BX, BZ } from './world.js';
+import { buildWorld, boxes, query, addBox, makeWebTex, rnd, CYC, AVE_GO, ST_T0, ST_GO, cellX, cellZ, HALFX, HALFZ, BX, BZ, EDGE, CROWN as CROWN_CELL, DOWNTOWN as DOWNTOWN_CELL } from './world.js';
 import { buildLife, makeFigure } from './life.js';
 import { buildHero, JOINTS } from './hero.js';
 
@@ -68,8 +68,11 @@ canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setTime
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.25, 9000);
 
+const _t0 = performance.now();
 const world = buildWorld(scene, renderer);
+const _t1 = performance.now();
 const life = buildLife(scene, world);
+window.__initT = { world: Math.round(_t1 - _t0), life: Math.round(performance.now() - _t1) };
 // street surfaces pick up a sodium-lamp glow at night
 for (const m of world.streetMats) { m.emissiveMap = m.map; m.emissive.set(0xffb469); m.emissiveIntensity = 0; }
 
@@ -91,9 +94,9 @@ const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x6b5640, 0.5); scene.add(hemi)
 const lightDir = new V3();
 
 const TOD = [
-  { name: 'Golden Hour', int: 0.27, elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00031, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.5, cloudD: 0.55, glow: 1.25, tintS: [0.93, 0.99, 1.08], tintH: [1.05, 1.0, 0.93], bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
-  { name: 'Midday', int: 0.5, elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00022, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.5, cloudD: 0.6, glow: 0.5, tintS: [0.96, 1.0, 1.05], tintH: [1.02, 1.0, 0.97], bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
-  { name: 'Night', int: 0.03, elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00034, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, cloudD: 0.35, glow: 0, tintS: [0.9, 0.97, 1.1], tintH: [1.04, 1.0, 0.95], bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
+  { name: 'Golden Hour', int: 0.27, elev: 13, azim: 62, turb: 4.6, ray: 2.9, mie: 0.006, sunColor: 0xffb878, sunI: 2.9, sky: 0xa9bfe8, gnd: 0x8c6b52, hemiI: 0.58, fog: 0xd9a983, fogD: 0.00022, exp: 0.43, win: 0.32, lit: 0.12, shop: 0.55, env: 0.7, clouds: 0.5, cloudD: 0.55, glow: 1.25, tintS: [0.93, 0.99, 1.08], tintH: [1.05, 1.0, 0.93], bloom: 0.09, bloomT: 2.7, light: 0.45, neon: 0.62, night: 0, cloudCol: 0xffc9a0, cloudE: 0.3, bb: 1.5 },
+  { name: 'Midday', int: 0.5, elev: 56, azim: 150, turb: 2.5, ray: 1.0, mie: 0.003, sunColor: 0xfff3e2, sunI: 2.5, sky: 0xcfe2ff, gnd: 0x6e6a60, hemiI: 0.66, fog: 0xa9bcd0, fogD: 0.00016, exp: 0.42, win: 0.04, lit: 0.1, shop: 0.25, env: 0.55, clouds: 0.5, cloudD: 0.6, glow: 0.5, tintS: [0.96, 1.0, 1.05], tintH: [1.02, 1.0, 0.97], bloom: 0.05, bloomT: 3.2, light: 0, neon: 0.5, night: 0, cloudCol: 0xffffff, cloudE: 0.5, bb: 1.1 },
+  { name: 'Night', int: 0.03, elev: -4, azim: 250, turb: 2, ray: 0.6, mie: 0.003, sunColor: 0x9fb4ff, sunI: 0.75, lightElev: 48, lightAzim: 300, sky: 0x4a5f9c, gnd: 0x3a2c1c, hemiI: 0.62, fog: 0x0d1630, fogD: 0.00026, exp: 0.82, win: 0.95, lit: 0.27, shop: 2.1, env: 1.0, clouds: 0.2, cloudD: 0.35, glow: 0, tintS: [0.9, 0.97, 1.1], tintH: [1.04, 1.0, 0.95], bloom: 0.17, bloomT: 1.3, light: 1, neon: 1.0, night: 1, cloudCol: 0x39415a, cloudE: 0.08, bb: 1.6 },
 ];
 let todIdx = 0;
 function makeNightSky() {
@@ -132,7 +135,7 @@ function applyTOD(i) {
   world.glowMat.color.setScalar(night ? 1.6 : 1.2);
   world.nightMat.color.setScalar(night ? 0.62 : 0.4);
   world.setNight(night || t.light > 0.1);
-  world.cloudMat.color.set(t.cloudCol); world.cloudMat.emissiveIntensity = t.cloudE;
+  world.setFarVis(1.9 / (t.fogD * 1.16));   // past this the haze has swallowed everything, so nothing is drawn
   world.waterMat.color.set(night ? 0x0b1a2e : t.light > 0.1 ? 0x3a6078 : 0x2c6787);
   for (const m of world.bbMats) m.emissiveIntensity = t.bb;
   life.setNight(t.night);
@@ -769,6 +772,7 @@ function respawn(msg) {
   P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 2;
   C.yaw = spawnYaw; C.pitch = -0.12; resetCam();
   P.facing.set(Math.sin(spawnYaw), 0, Math.cos(spawnYaw)); P.fy = spawnYaw;
+  world.prime(spawnPos.x, spawnPos.z);
   if (life) life.refresh();
   if (msg) flash('SPLASH! BACK TO THE ROOFTOPS');
 }
@@ -1279,13 +1283,13 @@ function topAt(x, z) { let y = world.groundAt(x, z) ? 0 : -3; query(x - 0.5, x +
 const FOUNT = world.parkRect.fountain;
 const AVX = (a) => -HALFX + a * BX, STZ = (r) => -HALFZ + r * BZ;
 const TRIALS = [
-  { name: 'UPTOWN EXPRESS', blurb: 'From the Village rooftops to the fountain in the park', start: null, goal: [FOUNT[0] + 9, 1.2, FOUNT[1]], r: 9, medals: [36, 46, 62] },
-  { name: 'THE CLIMB', blurb: 'From the avenue to the crown of the great Midtown tower', start: [AVX(5), STZ(14.5)], goal: [cellX(4), 374, cellZ(13)], r: 12, medals: [30, 42, 62] },
-  { name: 'DOWNTOWN DIVE', blurb: 'Leap off the downtown giant and touch down in Battery Park', start: [cellX(4) + 7, cellZ(4)], goal: [cellX(4), 1.2, cellZ(0)], r: 16, medals: [10, 14, 22] },
-  { name: 'RIVER TO RIVER', blurb: 'Straight across town, east shore to a west side pier', start: [-HALFX + 8, STZ(14)], goal: [880, 1.2, STZ(7.5 + 3 * 2.6)], r: 11, medals: [48, 60, 82] },
+  { name: 'UPTOWN EXPRESS', blurb: 'Forty-eight blocks north, from the roof where you start to the fountain in the park', start: null, goal: [FOUNT[0] + 12, 1.2, FOUNT[1]], r: 10, medals: [120, 150, 210] },
+  { name: 'THE CLIMB', blurb: 'From the avenue to the crown of the great Midtown tower', start: [AVX(CROWN_CELL[0] + 1), STZ(CROWN_CELL[1] + 1.5)], goal: [cellX(CROWN_CELL[0]), 374, cellZ(CROWN_CELL[1])], r: 12, medals: [30, 42, 62] },
+  { name: 'DOWNTOWN DIVE', blurb: 'Leap off the downtown giant and touch down in Battery Park', start: [cellX(DOWNTOWN_CELL[0]) + 7, cellZ(DOWNTOWN_CELL[1])], goal: [cellX(6), 1.2, cellZ(1)], r: 18, medals: [30, 40, 60] },
+  { name: 'RIVER TO RIVER', blurb: 'Three and a half kilometres across town at 20th Street, east shore to a west side pier', start: [-HALFX + 8, STZ(48)], goal: [HALFX + EDGE + 110, 1.2, STZ(48)], r: 11, medals: [105, 135, 190] },
 ];
 const TR = { k: -1, phase: 'idle', count: 0, t: 0, doneT: 0, goal: new V3(), best: {} };
-try { TR.best = JSON.parse(localStorage.getItem('skythread-best') || '{}') || {}; } catch (_) { TR.best = {}; }
+try { TR.best = JSON.parse(localStorage.getItem('skythread-best-2') || '{}') || {}; } catch (_) { TR.best = {}; }
 const beacon = new THREE.Group();
 {
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 520, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0xffb14a, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
@@ -1299,6 +1303,7 @@ function startTrial(k) {
   const T = TRIALS[k], sx = T.start ? T.start[0] : spawnPos.x, sz = T.start ? T.start[1] : spawnPos.z;
   if (mapOpen) closeMap();
   leaveShopNow();
+  world.prime(sx, sz);
   P.pos.set(sx, topAt(sx, sz) + HY + 0.05, sz); P.prev.copy(P.pos); P.rpos.copy(P.pos); P.vel.set(0, 0, 0);
   P.state = 'ground'; P.trick = null; P.zip = null; P.combo = 0; P.landT = P.rollT = P.skimT = P.launchT = 0; P.idleT = 0;
   const yaw = Math.atan2(T.goal[0] - sx, T.goal[2] - sz);
@@ -1313,7 +1318,7 @@ function endTrial() { TR.phase = 'idle'; TR.k = -1; beacon.visible = false; hudT
 function finishTrial() {
   const T = TRIALS[TR.k], t = TR.t, m = T.medals, medal = t <= m[0] ? 'GOLD' : t <= m[1] ? 'SILVER' : t <= m[2] ? 'BRONZE' : 'FINISHED';
   const old = TR.best[T.name], rec = !old || t < old;
-  if (rec) { TR.best[T.name] = +t.toFixed(2); try { localStorage.setItem('skythread-best', JSON.stringify(TR.best)); } catch (_) {} }
+  if (rec) { TR.best[T.name] = +t.toFixed(2); try { localStorage.setItem('skythread-best-2', JSON.stringify(TR.best)); } catch (_) {} }
   TR.phase = 'done'; TR.doneT = 6;
   popTrick(medal + (rec && old ? ' · NEW BEST' : '')); flash(T.name + ' · ' + t.toFixed(2) + ' S');
   P.style += medal === 'GOLD' ? 3000 : medal === 'SILVER' ? 1500 : medal === 'BRONZE' ? 700 : 200;
@@ -1359,7 +1364,7 @@ function introLeap() { // the click: straight from the crouch into a running div
 
 // ---------------------------------------------------------------- the city map (M): the camera lifts to a tilted bird's-eye view of the real city
 camera.far = 14000; camera.updateProjectionMatrix(); sky.renderOrder = -10;
-const MAPV = { k: 0, yaw: 0, zoom: 1, sel: -1, drag: false };
+const MAPV = { k: 0, zoom: 0.3, sel: -1, drag: false, tx: 0, tz: 0, vis: 0 };
 const mfx = document.getElementById('mapfx'), mg = mfx.getContext('2d');
 const _mq = new THREE.Quaternion(), _mq2 = new THREE.Quaternion(), _mp = new V3(), _mv = new V3();
 function trialCards() {
@@ -1375,13 +1380,15 @@ function selectTrial(k, again) { if (MAPV.sel === k && again) { startTrial(k); r
 function openMap() {
   if (!started || mapOpen) return;
   if (shopIn || dlg.on || transit.on) { flash('STEP OUTSIDE FIRST'); return; }
-  mapOpen = true; MAPV.sel = TR.phase !== 'idle' ? TR.k : -1; MAPV.yaw = 0; MAPV.zoom = 1; trialCards();
+  mapOpen = true; MAPV.sel = TR.phase !== 'idle' ? TR.k : -1; MAPV.zoom = 0.16; MAPV.tx = P.pos.x; MAPV.tz = clamp(P.pos.z + 500, -HALFZ, HALFZ); trialCards();   // opens on your part of town; scroll out for the whole island
+  world.setFarVis(1e9);
   document.getElementById('mapview').classList.add('show'); document.body.classList.add('mapping'); document.getElementById('pause').classList.remove('show');
   if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeMap() {
   if (!mapOpen) return;
   mapOpen = false; document.getElementById('mapview').classList.remove('show'); document.body.classList.remove('mapping');
+  world.setFarVis(1.9 / (TOD[todIdx].fogD * 1.16));
   if (!QS.has('nolock')) tryLock();
 }
 document.getElementById('trials').addEventListener('click', (e) => {
@@ -1394,11 +1401,21 @@ document.getElementById('trials').addEventListener('click', (e) => {
 document.getElementById('mapclose').addEventListener('click', () => closeMap());
 mfx.addEventListener('mousedown', () => { MAPV.drag = true; });
 addEventListener('mouseup', () => { MAPV.drag = false; });
-addEventListener('mousemove', (e) => { if (mapOpen && MAPV.drag) MAPV.yaw = clamp(MAPV.yaw - (e.movementX || 0) * 0.004, -1.25, 1.25); });
-mfx.addEventListener('wheel', (e) => { MAPV.zoom = clamp(MAPV.zoom * (e.deltaY > 0 ? 1.08 : 0.925), 0.45, 1.25); e.preventDefault(); }, { passive: false });
+addEventListener('mousemove', (e) => { // drag to slide the map under the camera
+  if (!mapOpen || !MAPV.drag) return;
+  const mpp = (2 * Math.tan(0.3316) * 31300 * MAPV.zoom) / innerHeight;
+  MAPV.tx = clamp(MAPV.tx + (e.movementX || 0) * mpp, -HALFX - 3000, HALFX + 3000); MAPV.tz = clamp(MAPV.tz + (e.movementY || 0) * mpp * 1.2, -HALFZ - 1500, HALFZ + 1500);
+});
+mfx.addEventListener('wheel', (e) => { MAPV.zoom = clamp(MAPV.zoom * (e.deltaY > 0 ? 1.1 : 0.91), 0.045, 1.4); e.preventDefault(); }, { passive: false });
 function mproj(x, y, z) { _mv.set(x, y, z).project(camera); return [(_mv.x * 0.5 + 0.5) * innerWidth, (-_mv.y * 0.5 + 0.5) * innerHeight]; }
-const MAPLBL = [[0, STZ(0.4)], [0, STZ(4.5)], [0, STZ(10)], [0, STZ(16.5)], [0, STZ(23.5)], [0, STZ(30.5)], [0, STZ(35.6)], [-2300, -900], [-2300, 800], [2400, 0], [0, HALFZ + 1100], [0, -HALFZ - 1300]].map(([x, z]) => [x, z, world.zoneAt(x, z)]).filter((l) => l[2])
-  .concat([[1040, STZ(23.5), 'UPPER WEST SIDE'], [-1040, STZ(23.5), 'UPPER EAST SIDE']]);
+// neighbourhood names, taken from the city itself at a spread of points; the boroughs and rivers round it are placed by hand
+const MAPLBL = (() => {
+  const out = [], seen = new Set();
+  for (const [i, j] of [[6.5, 0.6], [6.5, 7], [10, 16], [4, 16], [9.5, 21.5], [4, 21.5], [9, 26], [3, 26], [11, 35], [7, 35], [2.5, 35], [11, 46], [7, 46], [2.5, 46], [11, 56], [7, 56], [2, 56], [12, 74], [5.5, 81], [1.5, 74], [8, 72.5], [7.5, 112], [11.5, 112], [2.5, 105], [1.5, 131], [11.5, 145], [5, 146], [11, 168], [5, 168], [9.5, 208], [10, 246]]) {
+    const x = -HALFX + i * BX, z = -HALFZ + j * BZ, n = world.zoneAt(x, z); if (n && !seen.has(n)) { seen.add(n); out.push([x, z, n, /^(FINANCIAL|MIDTOWN|CENTRAL|HARLEM|WASHINGTON|GREENWICH|UPPER)/.test(n) ? 1 : 0]); }
+  }
+  return out.concat([[-3500, STZ(30), 'BROOKLYN', 2], [-3500, STZ(105), 'QUEENS', 2], [-3200, STZ(215), 'THE BRONX', 2], [4000, STZ(110), 'NEW JERSEY', 2], [600, -HALFZ - 1900, 'THE HARBOR', 2], [HALFX + 640, STZ(150), 'HUDSON RIVER', 2], [-HALFX - 320, STZ(60), 'EAST RIVER', 2]]);
+})();
 function drawMapFx(a) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2), W = innerWidth, H = innerHeight;
   if (mfx.width !== Math.round(W * dpr) || mfx.height !== Math.round(H * dpr)) { mfx.width = Math.round(W * dpr); mfx.height = Math.round(H * dpr); }
@@ -1407,8 +1424,9 @@ function drawMapFx(a) {
   camera.updateMatrixWorld();
   mg.globalAlpha = a; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.lineJoin = 'round';
   const text = (t, x, y, px, col, sp = 3) => { mg.font = `700 ${px}px "Barlow Condensed", "Arial Narrow", sans-serif`; try { mg.letterSpacing = sp + 'px'; } catch (_) {} mg.lineWidth = 4; mg.strokeStyle = 'rgba(5,9,16,0.85)'; mg.strokeText(t, x, y); mg.fillStyle = col; mg.fillText(t, x, y); };
-  for (const [x, z, name] of MAPLBL) { const p = mproj(x, 0, z); text(name, p[0], p[1], Math.abs(x) > 1500 || Math.abs(z) > HALFZ ? 15 : 12, 'rgba(255,255,255,0.7)', 3); }
-  for (const s of SHOPS) { // the shops you can walk into
+  const Z = MAPV.zoom;
+  for (const [x, z, name, rank] of MAPLBL) { if (rank === 0 ? Z > 0.17 : rank === 1 && Z > 0.7) continue; const p = mproj(x, 0, z); if (p[0] < -80 || p[0] > W + 80 || p[1] < -20 || p[1] > H + 20) continue; text(name, p[0], p[1], rank === 2 ? 15 : 12, rank === 2 ? 'rgba(190,225,255,0.75)' : 'rgba(255,255,255,0.72)', 3); }
+  if (Z < 0.5) for (const s of SHOPS) { // the shops you can walk into
     const p = mproj(s.x, 30, s.z);
     mg.beginPath(); mg.arc(p[0], p[1], 9, 0, TAU); mg.fillStyle = '#0b1220'; mg.fill(); mg.lineWidth = 2; mg.strokeStyle = s.css; mg.stroke();
     mg.font = '700 11px "Barlow Condensed", sans-serif'; try { mg.letterSpacing = '0px'; } catch (_) {} mg.fillStyle = s.css; mg.fillText(s.name[0], p[0], p[1] + 1);
@@ -1441,13 +1459,14 @@ function mapCamera(dt) {
   const to = mapOpen ? 1 : 0;
   if (MAPV.k === 0 && !to) return;
   MAPV.k += (to - MAPV.k) * (1 - Math.exp(-dt * 4.2)); if (Math.abs(to - MAPV.k) < 0.003) MAPV.k = to;
-  const e = smooth(MAPV.k), D = 2500 * MAPV.zoom, H = 3700 * MAPV.zoom;
+  const e = smooth(MAPV.k), D = 17500 * MAPV.zoom, H = 26000 * MAPV.zoom;
   _mq.copy(camera.quaternion); _mp.copy(camera.position);
-  const sh = innerWidth / innerHeight > 1.3 ? 520 * MAPV.zoom : 0, ox = -Math.cos(MAPV.yaw) * sh, oz = 120 + Math.sin(MAPV.yaw) * sh;   // the island sits left of the trial cards
-  camera.position.set(ox - Math.sin(MAPV.yaw) * D, H, oz - Math.cos(MAPV.yaw) * D); camera.lookAt(ox, 0, oz); _mq2.copy(camera.quaternion);
+  const ox = MAPV.tx - (innerWidth / innerHeight > 1.3 ? 3400 * MAPV.zoom : 0), oz = MAPV.tz;   // what you are looking at sits left of the trial cards
+  camera.position.set(ox, H, oz - D); camera.lookAt(ox, 0, oz); _mq2.copy(camera.quaternion);
   camera.position.lerpVectors(_mp, camera.position, e); camera.quaternion.slerpQuaternions(_mq, _mq2, e);
-  camera.fov += (38 - camera.fov) * e; camera.updateProjectionMatrix();
-  setHaze(1 - 0.86 * e);
+  camera.fov += (38 - camera.fov) * e;
+  camera.near = 0.25 + (4 + 40 * MAPV.zoom) * e; camera.far = 14000 + 130000 * e; camera.updateProjectionMatrix();   // from this far up the depth range has to move out with the camera
+  setHaze(1 - 0.972 * e);
   renderer.toneMappingExposure = TOD[todIdx].exp * (1 + (todIdx === 2 ? 0.9 : 1.5) * e);   // rooftops seen from above need more light than the street view
   drawMapFx(clamp((MAPV.k - 0.6) / 0.35, 0, 1));
 }
@@ -1602,14 +1621,14 @@ function advanceDlg() {
 }
 
 // ---------------------------------------------------------------- LAST ORDERS: a short story told across the shops
-const QTEXT = ['Meet Mara at the CORNER BODEGA', 'Pick up the pizzas at BOROUGH SLICE', 'Get the pizzas to Dex at the park fountain while they are hot', 'Take a skyline photo from the crown of the great Midtown tower', 'Print the photo at PIXEL OPTICS', 'Pick up the coffees at KUMO COFFEE', 'Bring it all back to Mara at the bodega', 'Story complete'];
+const QTEXT = ['Meet Mara at the CORNER BODEGA', 'Pick up the pizzas at BOROUGH SLICE', 'Get the pizzas to Dex in Madison Square while they are hot', 'Take a skyline photo from the crown of the great Midtown tower', 'Print the photo at PIXEL OPTICS', 'Pick up the coffees at KUMO COFFEE', 'Bring it all back to Mara at the bodega', 'Story complete'];
 const QUEST = { step: 0, timer: 0, timing: false, at: new V3(), mark: false, gold: false, trim: false, doneT: 0 };
 try { const o = JSON.parse(localStorage.getItem('skythread-story') || '{}') || {}; QUEST.step = clamp(o.step | 0, 0, 7); QUEST.gold = !!o.gold; QUEST.trim = !!o.trim && QUEST.gold; if (QUEST.step === 2) QUEST.step = 1; } catch (_) {}
 function saveStory() { try { localStorage.setItem('skythread-story', JSON.stringify({ step: QUEST.step, gold: QUEST.gold, trim: QUEST.trim })); } catch (_) {} }
 function setTrim() { M.glow.emissive.set(QUEST.trim ? 0xffc23d : 0x2ef2ff); M.glow.color.set(QUEST.trim ? 0x30220a : 0x062a30); }
 function toggleTrim() { if (!QUEST.gold || !started) return; QUEST.trim = !QUEST.trim; setTrim(); saveStory(); flash(QUEST.trim ? 'GOLD THREAD' : 'CYAN THREAD'); }
 setTrim();
-const CROWN = [cellX(4), cellZ(13)], DEXP = [FOUNT[0] + 11, FOUNT[1] + 7];
+const CROWN = [cellX(CROWN_CELL[0]), cellZ(CROWN_CELL[1])], DEXP = [world.msq.x + 8, world.msq.z + 6];
 const dex = makeFigure([0.95, 0.55, 0.12], [0.14, 0.16, 0.24], 0.45, 0.1); dex.position.set(DEXP[0], topAt(DEXP[0], DEXP[1]), DEXP[1]); scene.add(dex);
 { const tb = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.8), new THREE.MeshLambertMaterial({ color: 0xd8d2c6 })); tb.position.set(DEXP[0] + 1.6, dex.position.y + 0.78, DEXP[1] + 0.4); tb.castShadow = true; scene.add(tb);
   const lg = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.75, 0.06), new THREE.MeshLambertMaterial({ color: 0x3a3d42 })); lg.position.set(DEXP[0] + 1.6, dex.position.y + 0.375, DEXP[1] + 0.4); scene.add(lg); }
@@ -1629,8 +1648,8 @@ function counterTalk(s) {
   const k = s.keeper.position, nm = s.def.keeper, qs = questShop() === s, st = QUEST.step;
   P.facing.set(k.x - P.pos.x, 0, k.z - P.pos.z).normalize(); P.fy = Math.atan2(P.facing.x, P.facing.z);
   const take = () => { reach(k.x, F0 + 1.2, (k.z + P.pos.z) / 2); tone('triangle', 520, 780, 0.12, 0.12, { send: 0.2 }); };
-  if (qs && st === 0) say([[nm, 'You are the one who keeps swinging past my window. Good. I need fast.'], [nm, 'The block party is tonight and my runner called in sick. Three jobs, all over town.'], [nm, 'First: Borough Slice, down in the Financial District. They are holding pizzas for a man named Dex.']], () => setStep(1));
-  else if (qs && st === 1) say([[nm, 'Mara’s order? Three pies, still bubbling.'], [nm, 'Dex is setting up by the fountain in the park. That is a long way uptown — go before they go cold.']], () => { take(); setStep(2); QUEST.timer = 120; QUEST.timing = true; popTrick('PIZZAS ON BOARD'); });
+  if (qs && st === 0) say([[nm, 'You are the one who keeps swinging past my window. Good. I need fast.'], [nm, 'The block party is tonight and my runner called in sick. Three jobs, all over town.'], [nm, 'First: Borough Slice, six blocks down the avenue. They are holding pizzas for a man named Dex.']], () => setStep(1));
+  else if (qs && st === 1) say([[nm, 'Mara’s order? Three pies, still bubbling.'], [nm, 'Dex is setting up in Madison Square, nine blocks up the avenue. Go before they go cold.']], () => { take(); setStep(2); QUEST.timer = 120; QUEST.timing = true; popTrick('PIZZAS ON BOARD'); });
   else if (qs && st === 4) say([[nm, 'Shot from the crown? Nobody gets that angle. Printing it banner-size…'], [nm, 'Done. Tell Mara the frame is on the house.']], () => { take(); setStep(5); popTrick('BANNER PRINTED'); });
   else if (qs && st === 5) say([[nm, 'Two for Mara, extra hot. The lids are on tight — I have seen how you travel.']], () => { take(); setStep(6); popTrick('COFFEE TO GO'); });
   else if (qs && st === 6) say([[nm, 'Pizzas delivered, banner printed, coffee still hot. A whole day’s work in ten minutes.'], [nm, 'The party is on. Look up tonight — that one is for you.']], () => { take(); finale(); });
@@ -1647,7 +1666,7 @@ function takePhoto() {
   nz('highpass', 3000, 5000, 0.05, 0.5, {}); nz('highpass', 2500, 4000, 0.06, 0.4, { delay: 0.09 });
   addStyle(1000, 'SKYLINE SHOT'); setStep(4);
 }
-function storyOnExit(s) { if (QUEST.step === 2 && s.type === 'pizza') flash('GET TO THE FOUNTAIN'); }
+function storyOnExit(s) { if (QUEST.step === 2 && s.type === 'pizza') flash('GET TO MADISON SQUARE'); }
 // fireworks for the finale
 const FWN = 1400, fwPos = new Float32Array(FWN * 3), fwVel = new Float32Array(FWN * 3), fwCol = new Float32Array(FWN * 3), fwBase = new Float32Array(FWN * 3), fwLife = new Float32Array(FWN);
 const fwGeo = new THREE.BufferGeometry(); fwGeo.setAttribute('position', new THREE.BufferAttribute(fwPos, 3)); fwGeo.setAttribute('color', new THREE.BufferAttribute(fwCol, 3));
@@ -1752,18 +1771,19 @@ const hud = { style: $('style'), combo: $('combo'), speed: $('speed'), alt: $('a
 const lines = $('lines'), lctx = lines.getContext('2d');
 function popTrick(t) { hud.trick.textContent = t; hud.trick.classList.remove('pop'); void hud.trick.offsetWidth; hud.trick.classList.add('pop'); }
 function flash(t) { if (!hud.flash) return; hud.flash.textContent = t; hud.flash.classList.remove('pop'); void hud.flash.offsetWidth; hud.flash.classList.add('pop'); }
-// minimap: the whole city is painted once; each update draws a rotated window of it around the player
-const MSC = 0.4, mapCv = document.createElement('canvas');
-mapCv.width = Math.ceil((world.MAP.x1 - world.MAP.x0) * MSC); mapCv.height = Math.ceil((world.MAP.z1 - world.MAP.z0) * MSC);
-world.drawMap(mapCv.getContext('2d'), MSC);
+// minimap: the city round the player is painted into a window that is repainted when they near its edge; each update draws a rotated view of it
+const MSC = 0.4, MWIN = 1100, mapCv = document.createElement('canvas');
+mapCv.width = mapCv.height = Math.ceil(2 * MWIN * MSC);
+let mapCx = 1e9, mapCz = 1e9;
 const mini = $('map'), mctx = mini.getContext('2d'), MPX = mini.width;
 function drawMini() {
   const c = MPX / 2, range = 220 + clamp((P.pos.y - 40) * 0.6, 0, 280), k = c / range, u = MPX / 180;
+  if (Math.hypot(P.pos.x - mapCx, P.pos.z - mapCz) > 380) { mapCx = P.pos.x; mapCz = P.pos.z; world.drawMap(mapCv.getContext('2d'), MSC, mapCx, mapCz, MWIN); }
   mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.clearRect(0, 0, MPX, MPX);
   mctx.save(); mctx.beginPath(); mctx.arc(c, c, c - 1, 0, TAU); mctx.clip();
   mctx.fillStyle = '#12303f'; mctx.fillRect(0, 0, MPX, MPX);
   mctx.translate(c, c); mctx.rotate(C.yaw); mctx.scale(k / MSC, k / MSC);   // camera-forward is up
-  mctx.drawImage(mapCv, -(world.MAP.x1 - P.pos.x) * MSC, -(world.MAP.z1 - P.pos.z) * MSC);
+  mctx.drawImage(mapCv, -(mapCx + MWIN - P.pos.x) * MSC, -(mapCz + MWIN - P.pos.z) * MSC);
   mctx.restore();
   // view cone, then the hero's arrow
   mctx.save(); mctx.translate(c, c);
@@ -1852,7 +1872,7 @@ $('fade').classList.add('out');
     updateTrial(dt);
     try { updateStory(dt); } catch (e) { reportOnce(e); }
   } else { ev.trick = null; if (!started) { time += dt; introStep(dt); } }
-  if (!paused || !started) world.update(dt, time, camera.position.x, camera.position.z);
+  if (!paused || !started) world.update(dt, time, camera.position.x, camera.position.z, P.pos.x, P.pos.z);
   updateAnim(paused && started ? 0 : dt, time);
   updateCamera(dt, now, time);
   mapCamera(Math.min(rawDt, 0.1));

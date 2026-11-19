@@ -7,14 +7,14 @@
 // ============================================================================
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { BX, BZ, NA, NS, HALFX, HALFZ, SH, CYC, AVE_T0, AVE_GO, ST_T0, ST_GO, cellOK, inPark } from './world.js';
+import { BX, BZ, NA, NS, HALFX, HALFZ, SH, CYC, AVE_T0, AVE_GO, ST_T0, ST_GO, cellOK, inPark, zoneOf, TSQ } from './world.js';
 
 let seed = 77123;
 function rnd() { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 const rr = (a, b) => a + (b - a) * rnd(), pick = (a) => a[(rnd() * a.length) | 0];
 
 const A_PITCH = 7.0, A_SLOTS = 7, A_FRONT = BZ - 13.5 - 2.6;      // queue slots inside an avenue block
-const S_PITCH = 7.2, S_SLOTS = 17, S_FRONT = BX - 19.5 - 2.6;     // and inside a cross-street block
+const S_PITCH = 7.2, S_SLOTS = 26, S_FRONT = BX - 19.5 - 2.6;     // and inside a cross-street block
 const A_DELAY = 0.33, S_DELAY = 0.16;                             // start-up wave down the queue
 const A_DUR = AVE_GO - A_DELAY * A_SLOTS, S_DUR = ST_GO - S_DELAY * S_SLOTS;
 const A_STEP = 2 * BZ, S_STEP = BX;
@@ -327,11 +327,12 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     return r < 0.36 ? 0 : r < 0.56 ? 1 : r < 0.72 ? 2 : r < 0.81 ? 3 : r < 0.89 ? 4 : 5; };
   const jay = [];
   for (const sp of world.spans) {
+    sp.c0 = cars.length / 12;
     const blk = sp.axis ? BZ : BX, nb = Math.round((sp.a1 - sp.a0) / blk);
     const slots = sp.axis ? A_SLOTS : S_SLOTS, pitch = sp.axis ? A_PITCH : S_PITCH, front = sp.axis ? A_FRONT : S_FRONT, dly = sp.axis ? A_DELAY : S_DELAY;
     for (let b = 0; b < nb; b++) {
       const mid = sp.a0 + (sp.dir > 0 ? b + 0.5 : nb - b - 0.5) * blk;
-      const busy = (sp.axis ? mid : sp.line) < -HALFZ + 19 * BZ ? 1.15 : 0.8;
+      const busy = (sp.axis ? mid : sp.line) < -HALFZ + 87 * BZ ? 1.15 : 0.8;
       for (const lo of sp.lanes) for (let q = 0; q < slots; q++) {
         if (rnd() > (sp.axis ? 0.6 : 0.46) * busy) continue;
         let type = moverType(sp.axis), off = q;
@@ -341,7 +342,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
       // parked along the curbs
       const sides = sp.lanes.length > (sp.axis ? 2 : 1) ? [-1, 1] : [Math.sign(sp.lanes[0])];
       const parked = [];
-      for (const s of sides) for (let k = 0; k < (sp.axis ? 8 : 21); k++) {
+      for (const s of sides) for (let k = 0; k < (sp.axis ? 8 : 33); k++) {
         if (rnd() > (sp.axis ? 0.6 : 0.72)) continue;
         { const sp0 = b * blk + (sp.axis ? 16 : 22) + k * 6.1; parked.push(sp.a0 + (sp.dir > 0 ? sp0 : sp.a1 - sp.a0 - sp0)); }
         const r = rnd(); addCar(sp, sp.line + s * (sp.axis ? 12.9 : 6.75), b * blk + (sp.axis ? 16 : 22) + k * 6.1, 0, 0, r < 0.55 ? 0 : r < 0.85 ? 2 : 3);
@@ -354,8 +355,9 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
         }
       }
     }
+    sp.c1 = cars.length / 12;
   }
-  const CD = new Float32Array(cars), NC = cars.length / 12;
+  const CD = new Float32Array(cars), NC = cars.length / 12; cars.length = 0;
 
   // ------------------------------------------------------------ pedestrians
   const SHIRT = [[0.82, 0.2, 0.18], [0.16, 0.34, 0.66], [0.9, 0.88, 0.82], [0.12, 0.12, 0.14], [0.86, 0.66, 0.16], [0.2, 0.5, 0.32], [0.5, 0.28, 0.6], [0.88, 0.48, 0.2], [0.45, 0.47, 0.5], [0.72, 0.82, 0.9], [0.6, 0.15, 0.3], [0.3, 0.3, 0.34]];
@@ -366,23 +368,24 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
   for (let j = 0; j < NS; j++) for (let i = 0; i < NA; i++) {
     if (!cellOK(i, j) || inPark(i, j)) continue;
     const cx = -HALFX + (i + 0.5) * BX, cz = -HALFZ + (j + 0.5) * BZ, start = peds.length / 14;
-    const n = j === 0 ? 22 : j <= 6 ? 58 : j <= 11 ? 40 : j <= 18 ? ((i === 4 || i === 5) && (j === 14 || j === 15) ? 120 : 62) : j <= 27 ? 32 : 26;
-    for (let k = 0; k < n; k++) { const off = rr(-1.8, 0.2); addPed(cx, cz, 67.5 + off, 27.5 + off, walkSpeed()); }
-    blocks.push({ cx, cz, ex: 70, ez: 30, start, count: n });
+    const zn = zoneOf(i, j), n = zn === 'battery' ? 26 : zn === 'fidi' ? 78 : zn === 'village' ? 54 : zn === 'midtown' ? ((i === TSQ[0] || i === TSQ[0] + 1) && j >= TSQ[1] && j <= TSQ[2] ? 170 : 84) : zn === 'uptown' ? 34 : 44;
+    const HXB = (BX - 28) / 2 - 2.5, HZB = (BZ - 16) / 2 - 2.5;
+    for (let k = 0; k < n; k++) { const off = rr(-1.8, 0.2); addPed(cx, cz, HXB + off, HZB + off, walkSpeed()); }
+    blocks.push({ cx, cz, ex: HXB + 2.5, ez: HZB + 2.5, start, count: n });
   }
   { // the park: walkers and joggers on every path, people standing about on the grass and round the fountain
     const R = world.parkRect, xa = R.x0 + 24, xb = R.x1 - 24, zs = [R.z0 + 22, ...R.hz, R.z1 - 22];
-    const rings = [[xa, xb, zs[0], zs[zs.length - 1], 170]];
-    for (let k = 0; k + 1 < zs.length; k++) rings.push([xa, xb, zs[k], zs[k + 1], 85]);
+    const rings = [[xa, xb, zs[0], zs[zs.length - 1], 620]];
+    for (let k = 0; k + 1 < zs.length; k++) rings.push([xa, xb, zs[k], zs[k + 1], 120]);
     for (const [x0, x1, z0, z1, n] of rings) {
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2, hz = (z1 - z0) / 2, start = peds.length / 14;
       for (let k = 0; k < n; k++) { const off = rr(-1.3, 1.3); addPed(cx, cz, hx + off, hz + off, rnd() < 0.22 ? rr(2.8, 3.7) * (rnd() < 0.5 ? -1 : 1) : walkSpeed()); }
       blocks.push({ cx, cz, ex: hx + 3, ez: hz + 3, start, count: n });
     }
     const wet = (x, z) => R.water.some(([ox, oz, rx, rz]) => ((x - ox) / rx) ** 2 + ((z - oz) / rz) ** 2 < 1);
-    for (let q = 0; q < 4; q++) { // loose groups, by quarter so they stream with the view
-      const z0 = R.z0 + ((R.z1 - R.z0) * q) / 4, z1 = R.z0 + ((R.z1 - R.z0) * (q + 1)) / 4, start = peds.length / 14;
-      for (let g = 0; g < 34; g++) {
+    for (let q = 0; q < 16; q++) { // loose groups, in bands so they stream with the view
+      const z0 = R.z0 + ((R.z1 - R.z0) * q) / 16, z1 = R.z0 + ((R.z1 - R.z0) * (q + 1)) / 16, start = peds.length / 14;
+      for (let g = 0; g < 44; g++) {
         const gx = rr(R.x0 + 6, R.x1 - 6), gz = rr(z0 + 4, z1 - 4), m = 1 + ((rnd() * 4) | 0);
         for (let k = 0; k < m; k++) { const x = gx + rr(-1.6, 1.6), z = gz + rr(-1.6, 1.6); if (!wet(x, z)) addPed(x, z, 0, 0, 0); }
       }
@@ -394,14 +397,14 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     const addX = (ax, az, vx, vz, ts, dur) => { const a = pick(SHIRT), b = pick(PANTS); peds.push(ax, az, vx, vz, ts, 50 + dur, rr(0.9, 1.08), rnd(), a[0], a[1], a[2], b[0], b[1], b[2]); };
     for (let a = 1; a < NA; a++) for (let r = 1; r < NS; r++) {
       if (!(cellOK(a - 1, r - 1) && cellOK(a, r - 1) && cellOK(a - 1, r) && cellOK(a, r)) || (inPark(a - 1, r - 1) && inPark(a, r))) continue;
-      const xa = -HALFX + a * BX, zr = -HALFZ + r * BZ, start = peds.length / 14, n = r <= 19 ? 4 : 2;
+      const xa = -HALFX + a * BX, zr = -HALFZ + r * BZ, start = peds.length / 14, n = r <= 87 ? 4 : 2;
       for (const oz of [-10.2, 10.2]) for (let k = 0; k < n; k++) { const d = rnd() < 0.5 ? 1 : -1; addX(xa - d * 14.6, zr + oz + rr(-1.2, 1.2), d * 29.2, 0, AVE_T0 + AVE_GO + 0.6 + rr(0, 2.2), 29.2 / rr(1.5, 1.75)); }
       for (const ox of [-16.2, 16.2]) for (let k = 0; k < n; k++) { const d = rnd() < 0.5 ? 1 : -1; addX(xa + ox + rr(-1.2, 1.2), zr - d * 8.6, 0, d * 17.2, ST_T0 + ST_GO + 0.6 + rr(0, 4.5), 17.2 / rr(1.45, 1.7)); }
       blocks.push({ cx: xa, cz: zr, ex: 18, ez: 12, start, count: peds.length / 14 - start });
     }
     for (const [gx, line] of jay) { const d = rnd() < 0.5 ? 1 : -1, start = peds.length / 14; addX(gx, line - d * 8.6, 0, d * 17.2, ST_T0 + ST_GO + 0.8 + rr(0, 4), 17.2 / rr(1.5, 1.8)); blocks.push({ cx: gx, cz: line, ex: 2, ez: 9, start, count: 1 }); }
   }
-  const PD = new Float32Array(peds), NPED = peds.length / 14;
+  const PD = new Float32Array(peds), NPED = peds.length / 14; peds.length = 0;
   const PEDCAP = 2800, pedI = instanced(bodyPed(), PEDCAP, 3), pedHiI = instanced(bodyPedHi(), 420, 3);
   for (const I of [pedI, pedHiI]) { const m = new THREE.Mesh(I.g, pedMat); m.frustumCulled = false; m.receiveShadow = true; m.matrixAutoUpdate = false; scene.add(m); }
 
@@ -466,7 +469,9 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
     const near2 = Q.near * Q.near, far2 = Q.far * Q.far, farR = Q.far, always = Math.max(70, cy * 1.3), al2 = always * always;
     for (const t of TYPES) t.I.n = 0; farI.n = 0;
     const nI = info.nearIdx, nD = info.nearD; nI.fill(-1); nD.fill(1e9);
-    for (let i = 0, o = 0; i < NC; i++, o += 12) {
+    for (const sp of world.spans) { // whole streets too far off to one side are skipped in one test
+     const sd = sp.line - (sp.axis ? cx : cz); if (sd > farR + 14 || sd < -farR - 14) continue;
+     for (let i = sp.c0, o = i * 12; i < sp.c1; i++, o += 12) {
       const axis = CD[o + 4], dc = CD[o] - (axis ? cx : cz);
       if (dc > farR || dc < -farR) continue;
       const L = CD[o + 3], move = CD[o + 7]; let s = CD[o + 1];
@@ -483,6 +488,7 @@ uniform float uTc; uniform float uN; uniform float uHead; uniform float uTail; v
       A[k4] = CD[o]; A[k4 + 1] = CD[o + 1]; A[k4 + 2] = CD[o + 2]; A[k4 + 3] = L;
       B[k4] = axis; B[k4 + 1] = CD[o + 5]; B[k4 + 2] = CD[o + 6]; B[k4 + 3] = move;
       C[k3] = CD[o + 9]; C[k3 + 1] = CD[o + 10]; C[k3 + 2] = CD[o + 11];
+    }
     }
     let nn = 0; for (const t of TYPES) { flush(t.I); nn += t.I.n; } flush(farI);
     info.cars = nn; info.farCars = farI.n;
