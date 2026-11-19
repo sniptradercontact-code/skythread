@@ -54,6 +54,7 @@ Open `index.html` in a browser, click to start.
 | T | time of day (golden hour / midday / night) |
 | M | city map: drag to move, scroll to zoom (out to the whole island); click a time trial (or 1-4) to see its route, click again or Enter to start |
 | K | switch suit trim (after finishing the story) |
+| V | first person / third person |
 | N | mute |
 | H | toggle help |
 

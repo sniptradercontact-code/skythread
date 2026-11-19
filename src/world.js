@@ -595,12 +595,12 @@ float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     if (along) {
       const c = (x0 + x1) / 2, z = side > 0 ? z1 - 0.7 : z0 + 0.7, xa = c - (side * len) / 2, xb = c + (side * len) / 2;
       B.sign.quad([xa, yb, z], [xb, yb, z], [xb, yt, z], [xa, yt, z], [0, 0, side], [u0, v0], [u1, v0], [u1, v1], [u0, v1], W);
-      B.roof.box(c - len / 2 - 0.3, c + len / 2 + 0.3, yb - 0.3, yt + 0.3, Math.min(z - side * 0.08, z - side * 0.5), Math.max(z - side * 0.08, z - side * 0.5), K.dark, true);
+      B.roof.box(c - len / 2 - 0.3, c + len / 2 + 0.3, yb - 0.3, yt + 0.3, Math.min(z - side * 0.22, z - side * 0.5), Math.max(z - side * 0.22, z - side * 0.5), K.dark, true);
       for (const t of [-0.38, 0.38]) B.roof.box(c + t * len - 0.2, c + t * len + 0.2, y, yb - 0.3, z - side * 0.5 - 0.2, z - side * 0.5 + 0.2, K.metal);
     } else {
       const c = (z0 + z1) / 2, x = side > 0 ? x1 - 0.7 : x0 + 0.7, za = c + (side * len) / 2, zb = c - (side * len) / 2;
       B.sign.quad([x, yb, za], [x, yb, zb], [x, yt, zb], [x, yt, za], [side, 0, 0], [u0, v0], [u1, v0], [u1, v1], [u0, v1], W);
-      B.roof.box(Math.min(x - side * 0.08, x - side * 0.5), Math.max(x - side * 0.08, x - side * 0.5), yb - 0.3, yt + 0.3, c - len / 2 - 0.3, c + len / 2 + 0.3, K.dark, true);
+      B.roof.box(Math.min(x - side * 0.22, x - side * 0.5), Math.max(x - side * 0.22, x - side * 0.5), yb - 0.3, yt + 0.3, c - len / 2 - 0.3, c + len / 2 + 0.3, K.dark, true);
       for (const t of [-0.38, 0.38]) B.roof.box(x - side * 0.5 - 0.2, x - side * 0.5 + 0.2, y, yb - 0.3, c + t * len - 0.2, c + t * len + 0.2, K.metal);
     }
   }

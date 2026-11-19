@@ -306,7 +306,15 @@ const keys = {};
 const ev = { jump: false, swing: false, zip: false, trick: null };
 let mouse0 = false, locked = false, everLocked = false, started = false, lastMouse = 0, dragging = false;
 // the camera eases toward yawT/pitchT; position never changes where it points
-const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0, cine: 1 };
+const C = { yaw: 0, pitch: -0.2, yawT: 0, pitchT: -0.2, dist: 4, occl: 4, hold: 0, side: 0.5, fov: 62, target: new V3(), shake: 0, kick: 0, roll: 0, mAvg: 4, mN: 0, cine: 1, fp: 0, bobPh: 0, bobK: 0 };
+// first person: V switches; the choice is remembered
+let FP = false; try { FP = localStorage.getItem('skythread-view') === 'fp'; } catch (_) {}
+const pitchLo = () => (FP ? -1.5 : -1.35), pitchHi = () => (FP ? 1.5 : 0.8);
+function toggleView() {
+  if (!started || mapOpen) return;
+  FP = !FP; try { localStorage.setItem('skythread-view', FP ? 'fp' : 'tp'); } catch (_) {}
+  C.pitchT = clamp(C.pitchT, pitchLo(), pitchHi()); flash(FP ? 'FIRST PERSON' : 'THIRD PERSON');
+}
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -318,6 +326,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyZ') ev.trick = 'z';
   if (e.code === 'KeyE') { if (!interact()) ev.trick = 'e'; }
   if (e.code === 'KeyK') toggleTrim();
+  if (e.code === 'KeyV') toggleView();
   if (e.code === 'KeyR') ev.trick = 'r';
   if (e.code === 'KeyT') applyTOD((todIdx + 1) % TOD.length);
   if (e.code === 'KeyX' && started) { if (TR.phase === 'count' || TR.phase === 'run') startTrial(TR.k); else { endTrial(); respawn(false); P.style = 0; P.combo = 0; flash('RESTARTED'); } }
@@ -349,7 +358,7 @@ addEventListener('mousemove', (e) => {
   if (mag > 450 || (mag > 150 && mag > C.mAvg * 12 + 100)) { C.mAvg += (Math.min(mag, 120) - C.mAvg) * 0.15; return; }
   C.mAvg += (mag - C.mAvg) * 0.25;
   const s = 0.0022;
-  C.yawT -= dx * s; C.pitchT = clamp(C.pitchT - dy * s, -1.35, 0.8);
+  C.yawT -= dx * s; C.pitchT = clamp(C.pitchT - dy * s, pitchLo(), pitchHi());
   lastMouse = performance.now();
 });
 function tryLock() {
@@ -788,6 +797,11 @@ function updateAnim(dt, time) {
   const tr = P.trick, rolling = st === 'ground' && P.rollT > 0 && !tr;
   // facing eases toward the direction of travel; turning leans the body
   if (hs > 0.6 && dt > 0) { tv.set(v.x / hs, 0, v.z / hs); P.facing.lerp(tv, damp(st === 'ground' ? 13 : 9, dt)); P.facing.y = 0; if (P.facing.lengthSq() < 1e-4) P.facing.copy(tv); P.facing.normalize(); }
+  if (FP && C.fp > 0.5 && st === 'ground' && hs <= 0.6 && dt > 0 && !tr) { // standing in first person: the head turns first, and the feet follow once it has gone far enough
+    const by = Math.atan2(P.facing.x, P.facing.z), d = angDiff(C.yaw, by);
+    if (Math.abs(d) > 0.95) P.turning = true; else if (Math.abs(d) < 0.12) P.turning = false;
+    if (P.turning) { const a = by + d * (1 - Math.exp(-5.5 * dt)); P.facing.set(Math.sin(a), 0, Math.cos(a)); }
+  } else P.turning = false;
   const fy = Math.atan2(P.facing.x, P.facing.z);
   if (dt > 0) { const turn = angDiff(fy, P.fy) / dt; P.fy = fy; P.lean += (clamp(turn * hs * 0.01, -0.3, 0.3) * (st === 'ground' ? 1 : 0.4) - P.lean) * damp(5, dt); }
   if (st === 'ground' && hs < 0.6 && P.landT <= 0) P.idleT += dt; else P.idleT = 0;
@@ -899,12 +913,16 @@ function updateAnim(dt, time) {
   for (const j of JOINTS) { const c = cur[j], t = tgt[j]; c[0] += (t[0] - c[0]) * k; c[1] += (t[1] - c[1]) * k; c[2] += (t[2] - c[2]) * k; }
   cur.hipsY += (tgt.hipsY - cur.hipsY) * k; R.hips.position.y = cur.hipsY + 0.04;
   // the head (and a little of the chest) follows where the camera is looking
-  P.lookW = (P.lookW || 0) + (look - (P.lookW || 0)) * damp(6, dt);
-  const ly = clamp(angDiff(C.yaw, fy), -1.15, 1.15) * P.lookW, lp = clamp(C.pitch, -0.7, 0.6) * 0.45 * P.lookW;
+  const fpw = smooth(C.fp);
+  P.lookW = (P.lookW || 0) + (Math.max(look, tr ? 0 : fpw) - (P.lookW || 0)) * damp(6, dt);
+  const gy = clamp(angDiff(C.yaw, fy), -1.3, 1.3) * P.lookW, gp = clamp(C.pitch, -1.0, 0.9) * P.lookW;
+  // the head turns first and fastest; the chest follows more slowly and takes a share of the turn
+  P.hy = (P.hy || 0) + (gy - (P.hy || 0)) * damp(16, dt); P.cyw = (P.cyw || 0) + (gy - (P.cyw || 0)) * damp(5, dt); P.hp = (P.hp || 0) + (gp - (P.hp || 0)) * damp(14, dt);
+  const cSh = 0.22 + 0.08 * fpw, hSh = 0.62 + 0.1 * fpw, pSh = 0.45 + 0.3 * fpw;
   const sC = cur.spine, cC = cur.chest, hC = cur.head;
   R.spine.rotation.set(sC[0] * 0.6, sC[1] * 0.6, sC[2] * 0.6);
-  R.chest.rotation.set(sC[0] * 0.4 + cC[0], sC[1] * 0.4 + cC[1] + ly * 0.22, sC[2] * 0.4 + cC[2]);
-  R.head.rotation.set(hC[0] - lp, hC[1] + ly * 0.62, hC[2]);
+  R.chest.rotation.set(sC[0] * 0.4 + cC[0] - P.hp * 0.1 * fpw, sC[1] * 0.4 + cC[1] + P.cyw * cSh, sC[2] * 0.4 + cC[2]);
+  R.head.rotation.set(hC[0] - P.hp * pSh, hC[1] + P.hy * (cSh + hSh) - P.cyw * cSh, hC[2] - P.hy * 0.06);
   for (const j of ['shL', 'elL', 'haL', 'shR', 'elR', 'haR', 'hipL', 'knL', 'hipR', 'knR']) { const c = cur[j]; R[j].rotation.set(c[0], c[1], c[2]); }
   // feet: planted flat when standing on something, posed (toes pointed) in the air
   P.flat = (P.flat || 0) + ((st === 'ground' && !rolling && !tr ? 1 : 0) - (P.flat || 0)) * damp(14, dt);
@@ -1001,13 +1019,23 @@ function rayDist(o, dx, dy, dz, maxT) { // nearest solid surface along a ray (no
   if (dy < -1e-4 && o.y > 0.5) { const tg = (o.y - 0.5) / -dy; if (tg < best && world.groundAt(o.x + dx * tg, o.z + dz * tg)) best = tg; }
   return best;
 }
+const fpEye = new V3(), fpSteady = new V3(), fpUp = new V3();
+const headMeshes = []; R.head.traverse((o) => { if (o.isMesh) headMeshes.push(o); });
+let ghostOn = false;
+function setHeadGhost(on) { // drawn into the shadow map, not into the picture
+  if (on === ghostOn) return; ghostOn = on;
+  for (const m of headMeshes) {
+    if (!m.userData.solid) { m.userData.solid = m.material; const g = m.material.clone(); g.colorWrite = false; g.depthWrite = false; m.userData.ghost = g; }
+    m.material = on ? m.userData.ghost : m.userData.solid;
+  }
+}
 function updateCamera(dt, now, time) {
   const v = P.vel, sp = v.length(), hs = Math.hypot(v.x, v.z), st = P.state;
   if (now - lastMouse > 2200 && (st === 'swing' || st === 'air' || st === 'zip') && hs > 10) {
     C.yawT += angDiff(Math.atan2(v.x, v.z), C.yawT) * damp(0.8, dt) * clamp((now - lastMouse - 2200) / 1500, 0, 1);
   }
   if (keys.ArrowLeft) C.yawT += 2.2 * dt; if (keys.ArrowRight) C.yawT -= 2.2 * dt;
-  if (keys.ArrowUp) C.pitchT = clamp(C.pitchT + 1.5 * dt, -1.35, 0.8); if (keys.ArrowDown) C.pitchT = clamp(C.pitchT - 1.5 * dt, -1.35, 0.8);
+  if (keys.ArrowUp) C.pitchT = clamp(C.pitchT + 1.5 * dt, pitchLo(), pitchHi()); if (keys.ArrowDown) C.pitchT = clamp(C.pitchT - 1.5 * dt, pitchLo(), pitchHi());
   if (started) C.cine = Math.max(0, C.cine - dt * 0.8);   // the opening shot relaxes into the play camera
   const ks = dt > 0 ? damp(lerp(60, 2.6, smooth(C.cine)), dt) : 1;
   C.yaw += (C.yawT - C.yaw) * ks; C.pitch += (C.pitchT - C.pitch) * ks;
@@ -1046,6 +1074,24 @@ function updateCamera(dt, now, time) {
   const dist = Math.min(C.dist, C.occl);
   camPos.copy(camPivot).addScaledVector(camDir, -dist);
   if (dist > 1.05) hero.visible = true; else if (dist < 0.85) hero.visible = false;
+  // first person: the view sits at the hero's eyes and rides the head, so every stride, lean, landing and swing moves it,
+  // while the gaze itself stays under the mouse. The head is left out of the picture but still casts its shadow.
+  const fpT = FP && started && C.cine <= 0 ? 1 : 0;
+  C.fp += (fpT - C.fp) * (dt > 0 ? damp(9, dt) : 1); if (Math.abs(fpT - C.fp) < 0.002) C.fp = fpT;
+  let fpBank = 0;
+  if (C.fp > 0) {
+    hero.visible = true;
+    fpEye.set(0, 0.115, 0.1).applyMatrix4(R.head.matrixWorld);
+    fpSteady.copy(P.rpos).add(P.offset); fpSteady.y += 0.67 - P.perch * 0.45; fpSteady.addScaledVector(P.facing, 0.07);
+    fpEye.lerp(fpSteady, P.trick || P.rollT > 0 ? 0.62 : 0.3);            // most of the body's motion, not all of it: a flip should not turn the stomach
+    if (st === 'ground' && dt > 0) C.bobPh += dt * (5.5 + hs * 0.95);
+    C.bobK += ((st === 'ground' ? clamp(hs / 7, 0, 1) : 0) - C.bobK) * damp(6, dt);
+    const bx = Math.sin(C.bobPh) * 0.02 * C.bobK;                          // the sway and dip of each stride, and the give in the knees on landing
+    fpEye.y += Math.sin(C.bobPh * 2) * 0.028 * C.bobK - smooth(C.kick) * 0.1; fpEye.x += rx * bx; fpEye.z += rz * bx;
+    camPos.lerp(fpEye, smooth(C.fp));
+    fpUp.set(0, 1, 0).applyQuaternion(P.baseQ); fpBank = clamp((fpUp.x * rx + fpUp.z * rz) * 0.3, -0.22, 0.22) * smooth(C.fp);   // the horizon tips as the body banks through a swing
+  }
+  setHeadGhost(C.fp > 0.5);
 
   // gentle life in the lens: bank with sideways motion, a rumble at speed, a jolt on impact, a slow breath when still
   const latV = v.x * rx + v.z * rz;
@@ -1055,11 +1101,12 @@ function updateCamera(dt, now, time) {
   const nx = Math.sin(time * 53.1) * 0.6 + Math.sin(time * 31.7 + 1.3) * 0.4, ny = Math.sin(time * 47.3 + 2.1) * 0.6 + Math.sin(time * 27.9) * 0.4;
   camera.position.set(camPos.x + rx * nx * sh * 0.22, camPos.y + ny * sh * 0.22 + still * Math.sin(time * 1.1) * 0.012, camPos.z + rz * nx * sh * 0.22);
   camera.lookAt(camera.position.x + dx, camera.position.y + dy, camera.position.z + dz);
-  camera.rotateZ(-C.roll + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
+  camera.rotateZ(-C.roll * (1 + 0.6 * C.fp) - fpBank + nx * sh * 0.012 + still * Math.sin(time * 0.63) * 0.003);
   if (sh > 0.001) camera.rotateX(ny * sh * 0.014);
-  const fov = 62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3;
+  const fov = lerp(62 - smooth(C.cine) * 17 + clamp((sp - 14) / 56, 0, 1) * 21 + smooth(C.kick) * 7 - P.perch * 3, 80 + clamp((sp - 14) / 56, 0, 1) * 15 + smooth(C.kick) * 5, smooth(C.fp));
   C.fov += (fov - C.fov) * damp(3, dt);
-  if (Math.abs(camera.fov - C.fov) > 0.01) { camera.fov = C.fov; camera.updateProjectionMatrix(); }
+  const nearW = 0.25 - 0.15 * C.fp;                                         // close enough to see your own hands
+  if (Math.abs(camera.fov - C.fov) > 0.01 || (MAPV.k === 0 && Math.abs(camera.near - nearW) > 1e-3)) { camera.fov = C.fov; if (MAPV.k === 0) camera.near = nearW; camera.updateProjectionMatrix(); }
 }
 // keep the sun's shadow box around the action, moving it in whole texels so shadow edges never crawl
 const _sr = new V3(), _su = new V3(), _sc = new V3();
@@ -1888,7 +1935,7 @@ $('fade').classList.add('out');
   if (envDirty > 0 && --envDirty === 0 && qIdx <= 2) { try { captureEnv(); } catch (e) { reportOnce(e); } }
   if (dbgCam) { if (dbgCam.f) { camera.position.copy(P.rpos).add(dbgCam.p); camera.lookAt(P.rpos.x, P.rpos.y + dbgCam.t.y, P.rpos.z); } else { camera.position.copy(dbgCam.p); camera.lookAt(dbgCam.t); } }
   if (q.sh > 0 && frameNo % q.shEvery === 0) placeSun();
-  if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn * (1 - MAPV.k) * (shopIn ? 0 : 1); dof.uniforms.uFocus.value = 130 + P.perch * 30; }
+  if (dof) { dof.uniforms.uMax.value = (2.2 + P.perch * 1.6) * q.pr * qDyn * (1 - MAPV.k) * (shopIn ? 0 : 1); dof.uniforms.uFocus.value = 130 + P.perch * 30; dof.uniforms.uNear.value = camera.near; dof.uniforms.uFar.value = camera.far; }
   sky.position.copy(camera.position); sky.material.uniforms.time.value = time;
   if (finalPass) { // streaks at the edge of the frame once you are really moving
     const want = started && !paused && !shopIn ? clamp((P.vel.length() - 30) / 45, 0, 1) * 0.075 : 0;
@@ -1910,4 +1957,4 @@ function audioDbg() {
 }
 function audioPeak(ms) { return new Promise((res) => { audioDbg(); let pk = 0, s2 = 0, n = 0; const d = new Float32Array(_an.fftSize); const t0 = performance.now(); const iv = setInterval(() => { _an.getFloatTimeDomainData(d); for (let i = 0; i < d.length; i++) { pk = Math.max(pk, Math.abs(d[i])); s2 += d[i] * d[i]; n++; } if (performance.now() - t0 > ms) { clearInterval(iv); res({ peak: +pk.toFixed(3), rms: +Math.sqrt(s2 / n).toFixed(4) }); } }, 20); }); }
 let blurK = 0;
-window.__G = { sky, setHaze, TOD, getFinal: () => finalPass, storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
+window.__G = { setFP: (v) => { FP = v; },  sky, setHaze, TOD, getFinal: () => finalPass, storyTick: updateStory, mapCamera, MAPV, QUEST, SHOPS, dlg, transit, interact, advanceDlg, selectTrial, enterShop, exitShop, story: () => ({ step: QUEST.step, shop: shopIn && shopIn.name, prompt: PROMPT.label, dlg: dlg.on && dlg.lines[dlg.i] }), setStep: (k) => { QUEST.step = k; QUEST.timing = false; }, introStep, updateTrial, TR, TRIALS, startTrial, openMap, closeMap, intro, captureEnv, P, C, keys, ev, applyTOD, world, life, hero, R, perf, resetCam, audioDbg, audioPeak, freeze: (v) => { dbgFreeze = v; }, sfx: { thwip, whoosh, thud, footstep, horn, siren, heli }, setCam: (px, py, pz, tx, ty, tz) => { dbgCam = px == null ? null : { p: new V3(px, py, pz), t: new V3(tx, ty, tz) }; }, follow: (x, y, z, ty = 0) => { dbgCam = { f: true, p: new V3(x, y, z), t: new V3(0, ty, 0) }; }, setQuality: (i) => { perf.manual = true; applyQuality(i, 1); }, q: () => qIdx, info: () => renderer.info.render, zip: () => zipInfo, step, anim: updateAnim, renderer, scene, setStarted: () => { started = true; document.body.classList.add('playing'); $('start').classList.add('gone'); }, camera, time: () => time, addTime: (t) => { time += t; }, mouse: (dx, dy) => { C.yawT -= dx * 0.0022; C.pitchT = clamp(C.pitchT - dy * 0.0022, -1.35, 0.8); }, report: () => reported };
